@@ -1,0 +1,116 @@
+/* =====================================================================
+   SIGBEN — estilos globais do produto (mesma linguagem visual do Painel de Malhas Fiscais).
+   Cores do cliente chegam por CSS variables (--bf-primaria) definidas em
+   tempo de execução a partir da configuração do back-end.
+   ===================================================================== */
+:root {
+  --bf-primaria: #1A557E;
+  --bf-primaria-hover: #14466a;
+  --bf-fundo: #f8fafc;
+  --bf-superficie: #ffffff;
+  --bf-borda: #e2e8f0;
+  --bf-texto: #1e293b;
+  --bf-texto-suave: #64748b;
+  --bf-raio: 8px;
+  --bf-sidebar: 264px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--bf-texto);
+  background: var(--bf-fundo);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--bf-primaria); text-decoration: none; }
+a:hover { color: var(--bf-primaria-hover); text-decoration: underline; }
+h1, h2, h3, h4 { margin: 0; color: var(--bf-texto); }
+
+.num { font-variant-numeric: tabular-nums; }
+.suave { color: var(--bf-texto-suave); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.direita { text-align: right; }
+.centro { text-align: center; }
+.nowrap { white-space: nowrap; }
+.truncar { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ----------------------------- layout de página ----------------------------- */
+.pagina { padding: 24px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.pagina-cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.pagina-cabecalho h1 { font-size: 20px; font-weight: 600; }
+.pagina-cabecalho .subtitulo { color: var(--bf-texto-suave); font-size: 13px; margin-top: 4px; }
+
+.cartao { background: var(--bf-superficie); border: 1px solid var(--bf-borda); border-radius: var(--bf-raio); }
+.cartao-titulo {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid var(--bf-borda); background: #f8fafc;
+  border-radius: var(--bf-raio) var(--bf-raio) 0 0; font-weight: 600; font-size: 14px;
+}
+.cartao-titulo i { color: var(--bf-primaria); margin-right: 6px; }
+.cartao-corpo { padding: 16px; }
+
+.barra-acoes { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.barra-acoes .espaco { flex: 1; }
+
+.grade { display: grid; gap: 16px; }
+.grade-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grade-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grade-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .grade-3, .grade-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .grade-2, .grade-3, .grade-4 { grid-template-columns: minmax(0, 1fr); } .pagina { padding: 16px; } }
+.cartao-corpo { overflow-x: auto; }
+
+.campo { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.campo label { font-size: 13px; font-weight: 500; color: var(--bf-texto); }
+.campo .ajuda { font-size: 12px; color: var(--bf-texto-suave); }
+.campo-linha { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.obrigatorio::after { content: ' *'; color: #dc2626; }
+
+.dados { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 20px; }
+.dados .rotulo { font-size: 12px; color: var(--bf-texto-suave); }
+.dados .valor { font-size: 14px; font-weight: 500; margin-top: 2px; word-break: break-word; }
+
+.kpi { padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.kpi .rotulo { font-size: 12px; color: var(--bf-texto-suave); text-transform: uppercase; letter-spacing: .03em; }
+.kpi .valor { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .detalhe { font-size: 12px; color: var(--bf-texto-suave); }
+
+.vazio { padding: 32px; text-align: center; color: var(--bf-texto-suave); }
+.vazio i { font-size: 28px; display: block; margin-bottom: 8px; color: #cbd5e1; }
+
+.aviso-simulacao {
+  display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px; border-radius: 6px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 13px;
+}
+
+/* ------------------------- ajustes da biblioteca de UI (NG-ZORRO) ------------------------- */
+body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+.ant-table-thead > tr > th { font-size: 12px; font-weight: 600; color: #475569; background: #f8fafc; white-space: nowrap; }
+.ant-table-tbody > tr > td { font-size: 13px; }
+.ant-table-wrapper .ant-table-pagination.ant-pagination { margin: 12px 16px; }
+.cartao > nz-table .ant-table, .cartao .ant-table { border-radius: 0 0 var(--bf-raio) var(--bf-raio); }
+.ant-btn > nz-icon + span, .ant-btn > nz-icon { vertical-align: -0.125em; }
+.ant-btn { display: inline-flex; align-items: center; gap: 6px; }
+.ant-tag { margin-inline-end: 4px; }
+.bf-status.ant-tag { border-radius: 12px; }
+.abas-filtro .ant-tabs-nav { margin-bottom: 0; }
+.cartao-titulo nz-icon { color: var(--bf-primaria); margin-right: 6px; }
+.vazio nz-icon { font-size: 28px; display: block; margin-bottom: 8px; color: #cbd5e1; }
+.aviso-simulacao nz-icon { margin-top: 3px; }
+.ant-select, .ant-picker { min-width: 160px; }
+.campo .ant-select, .campo .ant-picker { width: 100%; }
+.botao-alerta.ant-btn:not(:disabled) { color: #b45309; border-color: #f59e0b; }
+.linha-clicavel { cursor: pointer; }
+
+.timeline-evento { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; }
+.timeline-evento .quando { font-size: 12px; color: var(--bf-texto-suave); }
+
+/* Ant Design liga 'tnum' no body (espaça hífens em textos como "NF-e"); números tabulares só onde importa */
+body, [class^='ant-'], [class*=' ant-'] { font-variant: normal; font-feature-settings: normal; }
+.num, .kpi .valor, .ant-pagination { font-variant-numeric: tabular-nums; }
+.ant-table-small .ant-table-tbody > tr > td { padding: 7px 8px; }
+.col-nome { min-width: 260px; }
+.ant-table-content { overflow-x: auto; }
+.ant-table-tbody > tr > td .ant-tag { white-space: nowrap; }
