@@ -19,6 +19,7 @@ import { AbaDocumentosComponent } from './aba-documentos';
 import { AbaHomologacaoComponent, AbaPublicacaoComponent } from './aba-gabinete';
 import { AbaInformacaoFiscalComponent } from './aba-informacao-fiscal';
 import { AbaParecerComponent } from './aba-parecer';
+import { AbaDiligenciasComponent, AbaRecursosComponent, AbaTermoComponent, ProcedimentosComponent } from './aba-desvios';
 
 /** O que acontece agora no processo: texto da próxima ação e a aba onde ela é executada. */
 const PROXIMA: Record<string, { texto: string; aba: string }> = {
@@ -34,13 +35,23 @@ const PROXIMA: Record<string, { texto: string; aba: string }> = {
   ARQUIVAMENTO_PENDENTE: { texto: 'Coordenação: arquivar o processo concluído.', aba: 'vigencia' },
   CONCEDIDO_ARQUIVADO: { texto: 'Benefício concedido. Processo arquivado e em acompanhamento pelo monitoramento.', aba: 'vigencia' },
   VIGENTE: { texto: 'Benefício vigente e incluído no Cadastro Estadual de Beneficiários.', aba: 'vigencia' },
+  DILIGENCIA: { texto: 'Aguardando o contribuinte responder a diligência no portal. A análise retoma com a resposta.', aba: 'diligencias' },
+  MANIFESTACAO: { texto: 'Aguardando a manifestação complementar de outro setor; o parecer só é finalizado sem pendência.', aba: 'diligencias' },
+  INSTRUCAO_EXTERNA: { texto: 'Aguardando a deliberação da Agência de Desenvolvimento e do CONDI; registrar o retorno ao chegar.', aba: 'diligencias' },
+  TERMO_ACORDO: { texto: 'Aguardando a empresa devolver o termo de acordo assinado; só então o Ato Declaratório é concluído.', aba: 'termo' },
+  INDEFERIDO: { texto: 'Solicitação indeferida. Corre o prazo recursal de 30 dias da ciência; vencido sem recurso, arquivar.', aba: 'recursos' },
+  RECURSO: { texto: 'Recurso em apreciação no Conselho de Recursos Fiscais (sem efeito suspensivo). Registrar o acórdão.', aba: 'recursos' },
+  SUSPENSO: { texto: 'Benefício suspenso. Restabelecer quando a irregularidade for sanada; cabe recurso em 30 dias da ciência.', aba: 'vigencia' },
+  CASSADO: { texto: 'Benefício cassado (irreversível). Cabe recurso ao Conselho em 30 dias da ciência.', aba: 'recursos' },
+  ARQUIVADO: { texto: 'Processo encerrado e arquivado.', aba: 'historico' },
 };
 
 @Component({
   selector: 'app-processo',
   imports: [RouterLink, DatePipe, CurrencyPipe, NzTabsModule, NzTagModule, NzButtonModule, NzIconModule, NzTooltipModule, NzAlertModule,
     NzBadgeModule, NzTimelineModule, StatusTagComponent, AbaDocumentosComponent, AbaInformacaoFiscalComponent, AbaParecerComponent,
-    AbaAtoComponent, AbaHomologacaoComponent, AbaPublicacaoComponent],
+    AbaAtoComponent, AbaHomologacaoComponent, AbaPublicacaoComponent, AbaDiligenciasComponent, AbaTermoComponent, AbaRecursosComponent,
+    ProcedimentosComponent],
   template: `
     @if (d(); as d) {
       <div class="pagina">
@@ -133,7 +144,10 @@ const PROXIMA: Record<string, { texto: string; aba: string }> = {
           @case ('documentos') { <app-aba-documentos [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('informacaoFiscal') { <app-aba-informacao-fiscal [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('parecer') { <app-aba-parecer [d]="d" (atualizado)="atualizar($event)" /> }
+          @case ('diligencias') { <app-aba-diligencias [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('ato') { <app-aba-ato [d]="d" (atualizado)="atualizar($event)" /> }
+          @case ('termo') { <app-aba-termo [d]="d" (atualizado)="atualizar($event)" /> }
+          @case ('recursos') { <app-aba-recursos [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('homologacao') { <app-aba-homologacao [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('publicacao') { <app-aba-publicacao [d]="d" (atualizado)="atualizar($event)" /> }
           @case ('vigencia') {
@@ -151,11 +165,11 @@ const PROXIMA: Record<string, { texto: string; aba: string }> = {
                     <span class="suave">Pode ser registrada pelo contribuinte no portal, pelo canal eletrônico (expressa ou tácita) ou presencialmente no Atendimento.</span>
                   }
                   <div class="barra-acoes">
-                    @if (d.acoes['REGISTRAR_CIENCIA']; as a) {
+                    @if (!d.desvios.decisaoEm && d.acoes['REGISTRAR_CIENCIA']; as a) {
                       <button nz-button nzType="primary" [disabled]="!a.habilitada" nz-tooltip [nzTooltipTitle]="a.motivo" (click)="cienciaPresencial()" [nzLoading]="ocupado()">
                         <nz-icon nzType="check" />Registrar ciência presencial</button>
                     }
-                    @if (d.acoes['ARQUIVAR']; as a) {
+                    @if (d.resumo.status !== 'INDEFERIDO' && d.acoes['ARQUIVAR']; as a) {
                       <button nz-button nzType="primary" [disabled]="!a.habilitada" nz-tooltip [nzTooltipTitle]="a.motivo" (click)="arquivar()" [nzLoading]="ocupado()">
                         <nz-icon nzType="inbox" />Arquivar processo</button>
                     }
@@ -174,6 +188,9 @@ const PROXIMA: Record<string, { texto: string; aba: string }> = {
                 }
               </div>
             </div>
+            @if (d.desvios.procedimentos.length || d.acoes['ABRIR_SUSPENSAO'] || d.acoes['ABRIR_CASSACAO'] || d.acoes['RESTABELECER']) {
+              <app-procedimentos [d]="d" (atualizado)="atualizar($event)" />
+            }
           }
           @case ('comunicacoes') {
             <div class="cartao"><div class="cartao-titulo"><span><nz-icon nzType="message" />Comunicações oficiais ao contribuinte</span><span class="suave">entregues pelo {{ canal }}</span></div>

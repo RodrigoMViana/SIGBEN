@@ -20,7 +20,7 @@ async function entrar(login) {
   return (await r.json()).token;
 }
 const demo = await entrar('sigben.demo');
-const PERFIS = ['ADMINISTRADOR', 'COORDENACAO', 'ATENDIMENTO', 'FISCALIZACAO', 'TRIBUTACAO', 'SECRETARIO', 'GABINETE', 'MONITORAMENTO', 'CONTRIBUINTE'];
+const PERFIS = ['ADMINISTRADOR', 'COORDENACAO', 'ATENDIMENTO', 'FISCALIZACAO', 'TRIBUTACAO', 'SECRETARIO', 'GABINETE', 'MONITORAMENTO', 'MANIFESTACAO', 'CONTRIBUINTE'];
 
 /** GET autenticado, tentando os perfis em ordem até um ter permissão. */
 async function get(caminho, token = demo) {
@@ -56,6 +56,7 @@ d.textos = await get('/api/catalogo/textos-padrao');
 d.tags = await get('/api/catalogo/tags');
 d.parametros = await get('/api/parametros');
 d.historicoParametros = await get('/api/parametros/historico');
+d.listas = await get('/api/processos/listas');
 console.log('catálogo e administração ok');
 
 const lista = await todasPaginas('/api/processos');

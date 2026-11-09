@@ -1,6 +1,7 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -28,7 +29,7 @@ const CONSEQUENCIA: Record<TipoConcessao, string> = {
 @Component({
   selector: 'app-catalogo',
   imports: [FormsModule, CurrencyPipe, DatePipe, NzTabsModule, NzTableModule, NzTagModule, NzButtonModule, NzIconModule, NzModalModule, NzRadioModule,
-    NzInputModule, NzInputNumberModule, NzAlertModule, StatusTagComponent],
+    NzInputModule, NzInputNumberModule, NzAlertModule, NzCheckboxModule, StatusTagComponent],
   template: `
     <div class="pagina">
       <div class="pagina-cabecalho"><div><h1>Catálogo de benefícios</h1>
@@ -112,6 +113,10 @@ const CONSEQUENCIA: Record<TipoConcessao, string> = {
             <div class="campo"><label>Prazo de fruição (meses)</label><nz-input-number [(ngModel)]="prazo" [nzMin]="1" /></div>
             <div class="campo largo"><label>Modalidades (separadas por ;)</label><input nz-input [(ngModel)]="modalidades" /></div>
           </div>
+          <div class="campo-linha">
+            <label nz-checkbox [(ngModel)]="exigeTermo">Exige termo de acordo assinado pela empresa antes do Ato Declaratório</label>
+            <label nz-checkbox [(ngModel)]="exigeInstrucaoExterna">Exige instrução externa (Agência de Desenvolvimento e CONDI)</label>
+          </div>
           <div class="campo"><label class="obrigatorio">Justificativa</label><textarea nz-input rows="2" [(ngModel)]="justificativa"></textarea></div>
         </div>
       </ng-container>
@@ -154,6 +159,8 @@ export class CatalogoPage implements OnInit {
   tipo: TipoConcessao = 'ATO_DECLARATORIO';
   prazo: number | null = null;
   modalidades = '';
+  exigeTermo = false;
+  exigeInstrucaoExterna = false;
   justificativa = '';
   corpo = '';
 
@@ -177,13 +184,15 @@ export class CatalogoPage implements OnInit {
     this.tipo = b.beneficio.tipoConcessao;
     this.prazo = b.beneficio.prazoMeses;
     this.modalidades = b.beneficio.modalidades.join(';');
+    this.exigeTermo = !!b.beneficio.exigeTermo;
+    this.exigeInstrucaoExterna = !!b.beneficio.exigeInstrucaoExterna;
     this.justificativa = '';
     this.editando.set(b);
   }
 
   salvar() {
     const b = this.editando()!;
-    this.api.alterarBeneficio(b.beneficio.id, { tipoConcessao: this.tipo, prazoMeses: this.prazo, modalidades: this.modalidades, justificativa: this.justificativa.trim() })
+    this.api.alterarBeneficio(b.beneficio.id, { tipoConcessao: this.tipo, prazoMeses: this.prazo, modalidades: this.modalidades, exigeTermo: this.exigeTermo, exigeInstrucaoExterna: this.exigeInstrucaoExterna, justificativa: this.justificativa.trim() })
       .subscribe(() => {
         this.msg.add({ severity: 'success', summary: 'Benefício alterado', detail: 'A alteração foi registrada na auditoria.' });
         this.editando.set(null);

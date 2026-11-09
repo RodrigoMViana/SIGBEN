@@ -5,7 +5,7 @@ import {
   Beneficio, BeneficioCatalogo, BeneficioPortal, Comunicacao, Contadores, Dashboard, DocumentoExigido, EditorPeca, Especie,
   Evento, InteressadoPortal, Pagina, PainelPortal, Parametro, ParametroHistorico, PerfilDetalhe, Permissao, ProcessoDetalhe,
   ProcessoPortal, ProcessoResumo, ResultadoLote, Setor, Solicitacao, TagCatalogo, Taxa, TaxaCalculada, TextoPadrao,
-  TipoConcessao, UsuarioAdmin, UsuarioResumo,
+  TipoConcessao, UsuarioAdmin, UsuarioResumo, Listas,
 } from './models';
 
 type Params = Record<string, string | number | boolean | null | undefined | (string | number)[]>;
@@ -92,8 +92,8 @@ export class ApiService {
   salvarPeca(id: number, tipo: 'parecer' | 'ato', textoPadraoId: number | null, valores: Record<string, string>): Observable<EditorPeca> {
     return this.http.put<EditorPeca>(`/api/processos/${id}/pecas/${tipo}`, { textoPadraoId, valores });
   }
-  assinarParecer(id: number): Observable<ProcessoDetalhe> {
-    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/parecer/assinar`, {});
+  assinarParecer(id: number, motivo?: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/parecer/assinar`, motivo ? { motivo } : {});
   }
   incluirContrapartida(id: number, c: { natureza: string; meta: number; unidade: string; prazo: string; periodicidade: string }): Observable<ProcessoDetalhe> {
     return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/contrapartidas`, c);
@@ -115,6 +115,65 @@ export class ApiService {
   }
   arquivar(id: number): Observable<ProcessoDetalhe> {
     return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/arquivar`, {});
+  }
+
+  // --------------------------------------------------------------- fase 2: desvios do fluxo
+  listas(): Observable<Listas> {
+    return this.http.get<Listas>("/api/processos/listas");
+  }
+  abrirDiligencia(id: number, tipo: string, descricao: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/diligencias`, { tipo, descricao });
+  }
+  cancelarDiligencia(id: number, did: number, motivo: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/diligencias/${did}/cancelar`, { motivo });
+  }
+  solicitarManifestacao(id: number, setorId: number, pergunta: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/manifestacoes`, { setorId, pergunta });
+  }
+  responderManifestacao(id: number, mid: number, texto: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/manifestacoes/${mid}/responder`, { texto });
+  }
+  encaminharInstrucao(id: number): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/instrucao-externa`, {});
+  }
+  registrarInstrucao(id: number, resultado: string, detalhe: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/instrucao-externa/retorno`, { resultado, detalhe });
+  }
+  enviarTermo(id: number): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/termo/enviar`, {});
+  }
+  prorrogarTermo(id: number, dias: number, justificativa: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/termo/prorrogar`, { dias, justificativa });
+  }
+  encaminharRecurso(id: number): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/recurso/encaminhar`, {});
+  }
+  decidirRecurso(id: number, resultado: string, numeroAcordao: string, fundamento: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/recurso/decisao`, { resultado, numeroAcordao, fundamento });
+  }
+  abrirProcedimento(id: number, p: { tipo: string; motivo: string; fundamentacao: string; prazoDias: number }): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/procedimentos`, p);
+  }
+  decidirProcedimento(id: number): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/procedimentos/decidir`, {});
+  }
+  arquivarProcedimento(id: number, motivo: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/procedimentos/arquivar`, { motivo });
+  }
+  restabelecer(id: number, motivo: string): Observable<ProcessoDetalhe> {
+    return this.http.post<ProcessoDetalhe>(`/api/processos/${id}/restabelecer`, { motivo });
+  }
+  responderDiligenciaPortal(id: number, did: number, resposta: string, f: File | null): Observable<ProcessoPortal> {
+    const fd = new FormData();
+    if (resposta) fd.append("resposta", resposta);
+    if (f) fd.append("arquivo", f, f.name);
+    return this.http.post<ProcessoPortal>(`/api/portal/processos/${id}/diligencias/${did}/responder`, fd);
+  }
+  devolverTermo(id: number, f: File): Observable<ProcessoPortal> {
+    return this.http.post<ProcessoPortal>(`/api/portal/processos/${id}/termo/devolver`, arquivo(f));
+  }
+  recorrer(id: number, razoes: string, cienteSemEfeitoSuspensivo: boolean): Observable<ProcessoPortal> {
+    return this.http.post<ProcessoPortal>(`/api/portal/processos/${id}/recurso`, { razoes, cienteSemEfeitoSuspensivo });
   }
 
   // --------------------------------------------------------------- portal do contribuinte
@@ -159,7 +218,7 @@ export class ApiService {
   beneficios(): Observable<BeneficioCatalogo[]> {
     return this.http.get<BeneficioCatalogo[]>('/api/catalogo/beneficios');
   }
-  alterarBeneficio(id: number, a: { tipoConcessao?: TipoConcessao; prazoMeses?: number | null; modalidades?: string; ativo?: boolean; justificativa: string }): Observable<Beneficio> {
+  alterarBeneficio(id: number, a: { tipoConcessao?: TipoConcessao; prazoMeses?: number | null; modalidades?: string; ativo?: boolean; exigeTermo?: boolean; exigeInstrucaoExterna?: boolean; justificativa: string }): Observable<Beneficio> {
     return this.http.put<Beneficio>(`/api/catalogo/beneficios/${id}`, a);
   }
   taxas(): Observable<Taxa[]> {

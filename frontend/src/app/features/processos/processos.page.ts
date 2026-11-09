@@ -22,6 +22,9 @@ export const ROTULOS_STATUS: Record<string, string> = {
   ANALISE_JURIDICA: 'Em análise jurídica', PARECER_ELABORACAO: 'Parecer em elaboração', ATO_ELABORACAO: 'Ato Declaratório em elaboração',
   HOMOLOGACAO: 'Aguardando homologação', PUBLICACAO: 'Aguardando publicação', CIENCIA_PENDENTE: 'Concedido · aguardando ciência',
   ARQUIVAMENTO_PENDENTE: 'Aguardando arquivamento', CONCEDIDO_ARQUIVADO: 'Concedido · arquivado', VIGENTE: 'Vigente',
+  DILIGENCIA: 'Em diligência (contribuinte)', MANIFESTACAO: 'Aguardando manifestação de setor', INSTRUCAO_EXTERNA: 'Em instrução externa (Agência/CONDI)',
+  TERMO_ACORDO: 'Aguardando termo de acordo', INDEFERIDO: 'Indeferido', RECURSO: 'Em recurso (Conselho)', SUSPENSO: 'Benefício suspenso',
+  CASSADO: 'Benefício cassado', ARQUIVADO: 'Arquivado',
 };
 export const ESPECIES: Record<string, string> = { CONCESSAO: 'Concessão', PRORROGACAO: 'Prorrogação', ALTERACAO: 'Alteração', RENUNCIA: 'Renúncia' };
 

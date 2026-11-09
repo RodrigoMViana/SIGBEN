@@ -30,13 +30,16 @@ import { isoData } from '../../shared/ui';
           }
         </div>
       </div>
-      @if (!d().beneficio.geraAto) {
+      @if (desfavoravel()) {
+        <nz-alert nzType="error" nzShowIcon nzMessage="Parecer desfavorável: homologação do indeferimento"
+          [nzDescription]="'Motivo: ' + (d().desvios.motivoDecisao ?? '—') + '. Homologado, a solicitação é indeferida e o contribuinte é comunicado, com prazo recursal de 30 dias da ciência.'" />
+      } @else if (!d().beneficio.geraAto) {
         <nz-alert nzType="info" nzShowIcon nzMessage="Tipo de Concessão Parecer Fiscal" nzDescription="A homologação conclui a concessão: não há Ato Declaratório a expedir nem publicação no Diário Oficial. O processo segue direto para a ciência do contribuinte." />
       }
       @if (d().acoes['HOMOLOGAR']; as x) {
         <div class="barra-acoes"><span class="espaco"></span>
           <button nz-button nzType="primary" [disabled]="!x.habilitada" nz-tooltip [nzTooltipTitle]="x.motivo" [nzLoading]="ocupado()" (click)="homologar()">
-            <nz-icon nzType="safety-certificate" />Homologar {{ d().beneficio.geraAto ? 'parecer e Ato Declaratório' : 'parecer' }}</button>
+            <nz-icon nzType="safety-certificate" />{{ desfavoravel() ? 'Homologar o indeferimento' : d().beneficio.geraAto ? 'Homologar parecer e Ato Declaratório' : 'Homologar parecer' }}</button>
         </div>
       }
     </div>
@@ -61,21 +64,22 @@ export class AbaHomologacaoComponent {
     const d = this.d();
     const par = d.pecas.find((p) => p.tipo === 'PARECER');
     const ato = d.pecas.find((p) => p.tipo === 'ATO_DECLARATORIO');
-    const c = [{ inst: 'Parecer nº ' + (par?.numero ?? '—'), quem: (par?.autorNome ?? '—') + ' · auditor parecerista', quando: par?.situacao === 'ASSINADA' ? par.assinadaEm : null }];
-    if (d.beneficio.geraAto) c.push({ inst: 'Ato Declaratório nº ' + (ato?.numero ?? '—'), quem: (ato?.autorNome ?? '—') + ' · conclusão do ato', quando: ato?.situacao === 'ASSINADA' ? ato.assinadaEm : null });
+    const c = [{ inst: 'Parecer nº ' + (par?.numero ?? '—') + (par?.conclusao === 'DESFAVORAVEL' ? ' (desfavorável)' : ''), quem: (par?.autorNome ?? '—') + ' · auditor parecerista', quando: par?.situacao === 'ASSINADA' ? par.assinadaEm : null }];
+    if (d.beneficio.geraAto && par?.conclusao !== 'DESFAVORAVEL') c.push({ inst: 'Ato Declaratório nº ' + (ato?.numero ?? '—'), quem: (ato?.autorNome ?? '—') + ' · conclusão do ato', quando: ato?.situacao === 'ASSINADA' ? ato.assinadaEm : null });
     c.push({ inst: 'Homologação', quem: d.homologadoPor ?? this.cfg.cliente?.autoridadeHomologadora ?? 'Secretário de Estado da Fazenda', quando: d.homologadoEm });
     return c;
   });
+  readonly desfavoravel = computed(() => [...this.d().pecas].reverse().find((p) => p.tipo === 'PARECER')?.conclusao === 'DESFAVORAVEL');
 
   homologar() {
     this.confirmacao.confirm({
       header: 'Homologar',
-      message: this.d().beneficio.geraAto ? 'Homologar o parecer e o Ato Declaratório vinculado e encaminhar a matéria para publicação?' : 'Homologar o parecer? A concessão é concluída e o contribuinte é comunicado para dar ciência.',
+      message: this.desfavoravel() ? 'Homologar o indeferimento? O contribuinte é comunicado da decisão e o prazo recursal corre da ciência.' : this.d().beneficio.geraAto ? 'Homologar o parecer e o Ato Declaratório vinculado e encaminhar a matéria para publicação?' : 'Homologar o parecer? A concessão é concluída e o contribuinte é comunicado para dar ciência.',
       acceptLabel: 'Homologar',
       accept: () => {
         this.ocupado.set(true);
         this.api.homologar(this.d().resumo.id).subscribe({
-          next: (d) => { this.msg.add({ severity: 'success', summary: 'Homologado' }); this.atualizado.emit(d); },
+          next: (d) => { this.msg.add({ severity: 'success', summary: d.resumo.status === 'INDEFERIDO' ? 'Indeferimento homologado e comunicado' : 'Homologado' }); this.atualizado.emit(d); },
           error: () => this.ocupado.set(false),
           complete: () => this.ocupado.set(false),
         });

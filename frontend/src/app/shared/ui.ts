@@ -13,6 +13,10 @@ const CORES: Record<string, Cor> = {
   EM_FORMALIZACAO: 'warning', RECEBIDO: 'blue', INFORMACAO_FISCAL: 'processing', ANALISE_JURIDICA: 'processing',
   PARECER_ELABORACAO: 'processing', ATO_ELABORACAO: 'processing', HOMOLOGACAO: 'purple', PUBLICACAO: 'purple',
   CIENCIA_PENDENTE: 'warning', ARQUIVAMENTO_PENDENTE: 'blue', CONCEDIDO_ARQUIVADO: 'success', VIGENTE: 'success',
+  DILIGENCIA: 'warning', MANIFESTACAO: 'processing', INSTRUCAO_EXTERNA: 'blue', TERMO_ACORDO: 'warning', INDEFERIDO: 'error', RECURSO: 'purple',
+  SUSPENSO: 'warning', CASSADO: 'error', ARQUIVADO: 'default',
+  // desvios do fluxo
+  ABERTA: 'warning', RESPONDIDA: 'success', ABERTO: 'warning', DECIDIDO: 'error', RESTABELECIDO: 'success', PROVIDO: 'success', NAO_PROVIDO: 'error',
   // documentos, peças e elegibilidade
   ENVIADO: 'blue', ACEITO: 'success', RECUSADO: 'error', SUBSTITUIDO: 'default', RASCUNHO: 'default', ASSINADA: 'success',
   OK: 'success', ALERTA: 'warning', FALHA: 'error', NAO_VERIFICADO: 'default',

@@ -4,7 +4,7 @@ import { autenticadoGuard, permissaoGuard } from './core/guards';
 import { MenuService } from './core/menu.service';
 
 const p = (...permissoes: string[]) => ({ canActivate: [permissaoGuard], data: { permissoes } });
-const ACOES = ['PROCESSO_FORMALIZAR', 'INFORMACAO_FISCAL_EMITIR', 'PARECER_ELABORAR', 'ATO_ELABORAR', 'PARECER_HOMOLOGAR', 'ATO_PUBLICAR', 'CIENCIA_REGISTRAR', 'PROCESSO_ARQUIVAR'];
+const ACOES = ['PROCESSO_FORMALIZAR', 'INFORMACAO_FISCAL_EMITIR', 'PARECER_ELABORAR', 'ATO_ELABORAR', 'PARECER_HOMOLOGAR', 'ATO_PUBLICAR', 'CIENCIA_REGISTRAR', 'PROCESSO_ARQUIVAR', 'MANIFESTACAO_RESPONDER', 'RECURSO_ENCAMINHAR', 'PROCEDIMENTO_DECIDIR'];
 
 /** Rotas com carregamento sob demanda (lazy): o bundle inicial contém apenas login e shell. */
 export const routes: Routes = [

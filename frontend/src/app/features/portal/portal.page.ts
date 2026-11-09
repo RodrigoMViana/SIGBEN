@@ -63,7 +63,7 @@ const CHAVE = 'bf.portal.interessado';
               <a class="item processo" [routerLink]="['/portal/processos', r.id]">
                 <div class="texto"><div><span class="mono">{{ r.numero }}</span> · {{ r.beneficio }}</div>
                   <div class="suave pequeno">{{ especies[r.especie] }} · solicitado em {{ r.dataSolicitacao | date: 'dd/MM/yyyy' }}</div></div>
-                <nz-tag [nzColor]="r.familia === 'CONTRIBUINTE' ? 'warning' : r.familia === 'CONCLUIDO' ? 'success' : 'blue'">{{ r.statusPortal }}</nz-tag>
+                <nz-tag [nzColor]="r.familia === 'CONTRIBUINTE' ? 'warning' : r.familia === 'CONCLUIDO' ? 'success' : r.familia === 'DESFAVORAVEL' ? 'error' : r.familia === 'ENCERRADO' ? 'default' : 'blue'">{{ r.statusPortal }}</nz-tag>
                 <nz-icon nzType="caret-right" class="suave" />
               </a>
             } @empty { <div class="vazio"><nz-icon nzType="inbox" />Nenhuma solicitação.</div> }

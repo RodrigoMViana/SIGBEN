@@ -8,7 +8,7 @@
  * NÃO é usado no build normal: só entra com `ng build --configuration demo`.
  */
 import type {
-  AbaProcesso, Acao, BeneficioCatalogo, Comunicacao, ConfiguracaoCliente, DocumentoExigido, EditorPeca, Evento, ItemDocumental,
+  AbaProcesso, Acao, BeneficioCatalogo, Comunicacao, ConfiguracaoCliente, Desvios, DocumentoExigido, EditorPeca, Evento, ItemDocumental, Listas,
   Parametro, ParametroHistorico, PecaResumo, PerfilDetalhe, Permissao, ProcessoDetalhe, ProcessoResumo, Setor, Solicitacao,
   StatusProcesso, TagCatalogo, TagPeca, Taxa, TextoPadrao, UsuarioAdmin, UsuarioResumo,
 } from '../core/models';
@@ -34,6 +34,7 @@ export interface DadosDemo {
   representantes: Record<string, number[]>;
   setorDe: Record<string, string | null>;
   solicitacoes: Solicitacao[];
+  listas: Listas;
 }
 
 export class ErroDemo {
@@ -49,7 +50,7 @@ export interface Requisicao {
   perfil: string | null;
 }
 
-type Papel = 'ATENDIMENTO' | 'FISCALIZACAO' | 'TRIBUTACAO' | 'GABINETE' | 'MONITORAMENTO';
+type Papel = 'ATENDIMENTO' | 'FISCALIZACAO' | 'TRIBUTACAO' | 'GABINETE' | 'MONITORAMENTO' | 'RECURSO' | 'INSTRUCAO_EXTERNA';
 const ST: Record<StatusProcesso, [string, string, ProcessoResumo['familia'], Papel, string | null]> = {
   EM_FORMALIZACAO: ['Em formalização pelo contribuinte', 'Ação pendente com você', 'CONTRIBUINTE', 'ATENDIMENTO', null],
   RECEBIDO: ['Recebido — em formalização no Atendimento', 'Em análise', 'SEFAZ', 'ATENDIMENTO', 'PROCESSO_FORMALIZAR'],
@@ -63,9 +64,25 @@ const ST: Record<StatusProcesso, [string, string, ProcessoResumo['familia'], Pap
   ARQUIVAMENTO_PENDENTE: ['Ciência registrada · aguardando arquivamento', 'Deferido', 'CONCLUIDO', 'TRIBUTACAO', 'PROCESSO_ARQUIVAR'],
   CONCEDIDO_ARQUIVADO: ['Concedido · processo arquivado', 'Deferido', 'CONCLUIDO', 'MONITORAMENTO', null],
   VIGENTE: ['Vigente', 'Deferido · vigente', 'CONCLUIDO', 'MONITORAMENTO', null],
+  DILIGENCIA: ['Aguardando resposta de diligência', 'Ação pendente com você', 'CONTRIBUINTE', 'TRIBUTACAO', null],
+  MANIFESTACAO: ['Aguardando manifestação complementar', 'Em análise', 'SEFAZ', 'TRIBUTACAO', 'MANIFESTACAO_RESPONDER'],
+  INSTRUCAO_EXTERNA: ['Aguardando instrução externa (Agência/CONDI)', 'Em análise', 'EXTERNO', 'INSTRUCAO_EXTERNA', 'PARECER_ELABORAR'],
+  TERMO_ACORDO: ['Aguardando termo de acordo assinado pela empresa', 'Ação pendente com você', 'CONTRIBUINTE', 'TRIBUTACAO', null],
+  INDEFERIDO: ['Indeferido', 'Indeferido', 'DESFAVORAVEL', 'TRIBUTACAO', null],
+  RECURSO: ['Recurso no Conselho de Recursos Fiscais', 'Recurso em apreciação', 'EXTERNO', 'TRIBUTACAO', 'RECURSO_ENCAMINHAR'],
+  SUSPENSO: ['Benefício suspenso', 'Suspenso', 'DESFAVORAVEL', 'MONITORAMENTO', null],
+  CASSADO: ['Cassado', 'Cassado', 'DESFAVORAVEL', 'MONITORAMENTO', null],
+  ARQUIVADO: ['Arquivado', 'Encerrado', 'ENCERRADO', 'TRIBUTACAO', null],
 };
 const CARTEIRA: StatusProcesso[] = ['ANALISE_JURIDICA', 'PARECER_ELABORACAO', 'ATO_ELABORACAO'];
+const PAUSA_DA_ANALISE: StatusProcesso[] = ['DILIGENCIA', 'MANIFESTACAO', 'INSTRUCAO_EXTERNA', 'TERMO_ACORDO'];
 const CONCEDIDOS: StatusProcesso[] = ['CIENCIA_PENDENTE', 'ARQUIVAMENTO_PENDENTE', 'CONCEDIDO_ARQUIVADO', 'VIGENTE'];
+const FORA_DO_FLUXO: StatusProcesso[] = ['EM_FORMALIZACAO', ...CONCEDIDOS, 'DILIGENCIA', 'TERMO_ACORDO', 'INDEFERIDO', 'SUSPENSO', 'CASSADO', 'ARQUIVADO'];
+const EM_FRUICAO: StatusProcesso[] = ['VIGENTE', 'CONCEDIDO_ARQUIVADO'];
+const DECISOES: StatusProcesso[] = ['INDEFERIDO', 'SUSPENSO', 'CASSADO'];
+const desviosVazios = (): Desvios => ({ statusRetorno: null, motivoDecisao: null, decisaoEm: null, decisaoCienciaEm: null, fimPrazoRecursal: null, termoEnviadoEm: null,
+  termoPrazo: null, termoAssinadoEm: null, termoTexto: null, instrucaoEnviadaEm: null, instrucaoResultado: null, instrucaoDetalhe: null,
+  diligencias: [], manifestacoes: [], recursos: [], procedimentos: [] });
 const SENHA_DEMO = '123456';
 const TAG = /\{\{\s*([a-zA-Z0-9_]+)\s*}}/g;
 
@@ -105,6 +122,8 @@ export class DemoBackend {
   /** Valores informados nas tags editáveis: processo → tipo da peça → chave → valor. */
   private valores: Record<number, Record<string, Record<string, string>>> = {};
   private modelos: Record<number, Record<string, number>> = {};
+  /** Situação do benefício antes do procedimento de suspensão/cassação (para restabelecer ou prover recurso). */
+  private anteriorProc: Record<number, StatusProcesso> = {};
 
   constructor(private readonly d: DadosDemo) {
     for (const [pid, eds] of Object.entries(d.editores)) {
@@ -128,6 +147,7 @@ export class DemoBackend {
       ['GET', /^\/api\/usuarios$/, () => this.d.responsaveis],
       // processos
       ['GET', /^\/api\/processos$/, () => this.pesquisar(r)],
+      ['GET', /^\/api\/processos\/listas$/, () => this.d.listas],
       ['POST', /^\/api\/processos\/distribuir$/, () => this.distribuir(r)],
       ['GET', /^\/api\/processos\/(\d+)$/, (m) => this.detalhe(+m[1], r)],
       ['GET', /^\/api\/processos\/(\d+)\/historico$/, (m) => this.d.historicos[+m[1]] ?? []],
@@ -149,6 +169,21 @@ export class DemoBackend {
       ['POST', /^\/api\/processos\/(\d+)\/publicacao\/(RECEBIMENTO|APROVACAO|PUBLICACAO)$/, (m) => this.publicacao(+m[1], m[2], r)],
       ['POST', /^\/api\/processos\/(\d+)\/ciencia$/, (m) => this.ciencia(+m[1], 'PRESENCIAL', r)],
       ['POST', /^\/api\/processos\/(\d+)\/arquivar$/, (m) => this.arquivar(+m[1], r)],
+      // fase 2: desvios do fluxo
+      ['POST', /^\/api\/processos\/(\d+)\/diligencias$/, (m) => this.abrirDiligencia(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/diligencias\/(\d+)\/cancelar$/, (m) => this.cancelarDiligencia(+m[1], +m[2], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/manifestacoes$/, (m) => this.solicitarManifestacao(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/manifestacoes\/(\d+)\/responder$/, (m) => this.responderManifestacao(+m[1], +m[2], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/instrucao-externa$/, (m) => this.encaminharInstrucao(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/instrucao-externa\/retorno$/, (m) => this.registrarInstrucao(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/termo\/enviar$/, (m) => this.enviarTermo(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/termo\/prorrogar$/, (m) => this.prorrogarTermo(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/recurso\/encaminhar$/, (m) => this.encaminharRecurso(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/recurso\/decisao$/, (m) => this.decidirRecurso(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/procedimentos$/, (m) => this.abrirProcedimento(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/procedimentos\/decidir$/, (m) => this.decidirProcedimento(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/procedimentos\/arquivar$/, (m) => this.arquivarProcedimento(+m[1], r)],
+      ['POST', /^\/api\/processos\/(\d+)\/restabelecer$/, (m) => this.restabelecer(+m[1], r)],
       // portal
       ['GET', /^\/api\/portal\/interessados$/, () => this.interessadosPortal(r)],
       ['GET', /^\/api\/portal\/interessados\/(\d+)\/painel$/, (m) => this.painelPortal(+m[1], r)],
@@ -162,6 +197,9 @@ export class DemoBackend {
       ['POST', /^\/api\/portal\/processos\/(\d+)\/enviar$/, (m) => this.enviar(+m[1], r)],
       ['POST', /^\/api\/portal\/processos\/(\d+)\/ciencia$/, (m) => { this.representado(r, this.p(+m[1]).resumo.interessadoId); this.ciencia(+m[1], 'PORTAL', r); return this.processoPortal(+m[1], r); }],
       ['POST', /^\/api\/portal\/comunicacoes\/(\d+)\/ciencia$/, (m) => this.cienciaComunicacao(+m[1], r)],
+      ['POST', /^\/api\/portal\/processos\/(\d+)\/diligencias\/(\d+)\/responder$/, (m) => this.responderDiligencia(+m[1], +m[2], r)],
+      ['POST', /^\/api\/portal\/processos\/(\d+)\/termo\/devolver$/, (m) => this.devolverTermo(+m[1], r)],
+      ['POST', /^\/api\/portal\/processos\/(\d+)\/recurso$/, (m) => this.apresentarRecurso(+m[1], r)],
       // catálogo
       ['GET', /^\/api\/catalogo\/beneficios$/, () => this.catalogo()],
       ['PUT', /^\/api\/catalogo\/beneficios\/(\d+)$/, (m) => this.alterarBeneficio(+m[1], r)],
@@ -250,10 +288,15 @@ export class DemoBackend {
       const distribui = perms.has('PROCESSO_DISTRIBUIR');
       const login = this.usuario(r).login;
       const nome = this.d.usuarios.find((u) => u.login === login)?.nome;
+      const setor = this.d.setorDe[login] ?? null;
       l = l.filter((p) => {
+        const det = this.d.processos[p.id];
+        // procedimento de suspensão/cassação com prazo de regularização vencido, aguardando decisão
+        if (perms.has('PROCEDIMENTO_DECIDIR') && det.desvios.procedimentos.some((x) => x.situacao === 'ABERTO' && x.prazoRegularizacao < hoje())) return true;
         const perm = ST[p.status][4];
         if (!perm || !perms.has(perm)) return false;
-        return !CARTEIRA.includes(p.status) || distribui || p.responsavelNome === nome;
+        if (p.status === 'MANIFESTACAO') return det.desvios.manifestacoes.some((x) => x.situacao === 'PENDENTE' && x.setor === setor);
+        return !(CARTEIRA.includes(p.status) || p.status === 'INSTRUCAO_EXTERNA') || distribui || p.responsavelNome === nome;
       });
     }
     return l;
@@ -282,14 +325,14 @@ export class DemoBackend {
   }
   private dashboard() {
     const ps = this.todos().map((p) => p.resumo);
-    const fora = [...CONCEDIDOS, 'EM_FORMALIZACAO'];
+    const fora = FORA_DO_FLUXO;
     const porSetor: Record<string, number> = {};
     ps.filter((p) => !fora.includes(p.status)).forEach((p) => (porSetor[p.setor ?? '—'] = (porSetor[p.setor ?? '—'] ?? 0) + 1));
     return {
       emAndamento: ps.filter((p) => !fora.includes(p.status)).length,
       concedidos: ps.filter((p) => CONCEDIDOS.includes(p.status)).length,
       parados: ps.filter((p) => p.parado).length,
-      aguardandoContribuinte: ps.filter((p) => p.status === 'EM_FORMALIZACAO').length,
+      aguardandoContribuinte: ps.filter((p) => ['EM_FORMALIZACAO', 'DILIGENCIA', 'TERMO_ACORDO'].includes(p.status)).length,
       porSituacao: (Object.keys(ST) as StatusProcesso[]).map((s) => ({ status: s, rotulo: ST[s][0], familia: ST[s][2], quantidade: ps.filter((p) => p.status === s).length })),
       porSetor, diasAlerta: this.inteiro('prazo.alerta_setor_dias', 15),
     };
@@ -307,7 +350,9 @@ export class DemoBackend {
     p.resumo.familia = ST[s][2];
     p.resumo.diasNoSetor = dias(p.resumo.entradaSetorEm);
     p.resumo.diasTotal = dias(p.resumo.dataSolicitacao);
-    p.resumo.parado = !CONCEDIDOS.includes(s) && s !== 'EM_FORMALIZACAO' && p.resumo.diasNoSetor >= this.inteiro('prazo.alerta_setor_dias', 15);
+    p.desvios ??= desviosVazios();
+    p.desvios.fimPrazoRecursal = p.desvios.decisaoCienciaEm ? somarDias(p.desvios.decisaoCienciaEm, this.inteiro('prazo.recurso_dias', 30)) : null;
+    p.resumo.parado = !FORA_DO_FLUXO.includes(s) && p.resumo.diasNoSetor >= this.inteiro('prazo.alerta_setor_dias', 15);
     p.resumo.divergenciaCnae = p.beneficio.geraParecer && !alcanca(p.beneficio.alcance, p.interessado.cnaes);
     p.documentosPendentes = ['EM_FORMALIZACAO', 'RECEBIDO'].includes(s) ? this.pendentes(p) : [];
     p.abas = this.abas(p);
@@ -320,8 +365,12 @@ export class DemoBackend {
     const b = p.beneficio;
     const s = p.resumo.status;
     const tipo = b.tipoConcessaoRotulo;
-    const parecer = p.pecas.find((x) => x.tipo === 'PARECER')?.situacao === 'ASSINADA';
+    const par = [...p.pecas].reverse().find((x) => x.tipo === 'PARECER');
+    const parecer = par?.situacao === 'ASSINADA';
+    const favoravel = !par || par.conclusao !== 'DESFAVORAVEL';
     const homologado = !!p.homologadoEm;
+    const dv = p.desvios;
+    const temDesvios = dv.diligencias.length > 0 || dv.manifestacoes.length > 0 || !!dv.instrucaoEnviadaEm;
     const A = (id: string, rotulo: string, habilitada: boolean, motivo: string | null, pendente = false) => ({ id, rotulo, habilitada, motivo, pendente });
     return [
       A('dados', 'Dados do processo', true, null),
@@ -329,10 +378,16 @@ export class DemoBackend {
       A('documentos', 'Documentos', true, null, s === 'RECEBIDO' || s === 'EM_FORMALIZACAO'),
       A('informacaoFiscal', 'Informação Fiscal', b.geraParecer, `Benefício de ${tipo} não percorre análise de viabilidade`, s === 'INFORMACAO_FISCAL'),
       A('parecer', 'Análise e parecer', b.geraParecer, `Benefício de ${tipo} não gera parecer`, s === 'ANALISE_JURIDICA' || s === 'PARECER_ELABORACAO'),
-      A('ato', 'Ato Declaratório', b.geraAto && parecer, b.geraAto ? 'O Ato Declaratório é vinculado ao parecer. Finalize o parecer para gerar o ato.' : `Tipo de Concessão ${tipo} não gera Ato Declaratório`, s === 'ATO_ELABORACAO'),
+      A('diligencias', 'Diligências e manifestações', b.geraParecer && (temDesvios || CARTEIRA.includes(s)), 'Abre na análise jurídica: diligência ao contribuinte, manifestação de outro setor ou instrução externa',
+        s === 'DILIGENCIA' || s === 'MANIFESTACAO' || s === 'INSTRUCAO_EXTERNA'),
+      A('ato', 'Ato Declaratório', b.geraAto && parecer && favoravel, b.geraAto ? 'O Ato Declaratório é vinculado ao parecer favorável. Finalize o parecer para gerar o ato.' : `Tipo de Concessão ${tipo} não gera Ato Declaratório`, s === 'ATO_ELABORACAO'),
+      A('termo', 'Termo de acordo', !!b.exigeTermo && b.geraAto && parecer && favoravel, b.exigeTermo ? 'O termo de acordo é enviado durante a elaboração do Ato Declaratório' : 'O modelo deste benefício não prevê termo de acordo', s === 'TERMO_ACORDO'),
       A('homologacao', 'Homologação', b.geraParecer && (s === 'HOMOLOGACAO' || homologado), !b.geraParecer ? 'Não há parecer a homologar neste tipo de concessão' : b.geraAto ? 'A homologação depende do parecer assinado e do Ato Declaratório concluído' : 'A homologação do Secretário depende do parecer assinado', s === 'HOMOLOGACAO'),
-      A('publicacao', 'Publicação', b.geraAto && homologado, b.geraAto ? 'A publicação no Diário Oficial depende da homologação pelo Secretário' : 'Parecer Fiscal não gera publicação no Diário Oficial', s === 'PUBLICACAO'),
-      A('vigencia', 'Ciência e vigência', CONCEDIDOS.includes(s), b.geraAto ? 'A vigência começa na publicação do Ato Declaratório' : 'A vigência começa na homologação do parecer', s === 'CIENCIA_PENDENTE' || s === 'ARQUIVAMENTO_PENDENTE'),
+      A('publicacao', 'Publicação', b.geraAto && homologado && favoravel, b.geraAto ? 'A publicação no Diário Oficial depende da homologação pelo Secretário' : 'Parecer Fiscal não gera publicação no Diário Oficial', s === 'PUBLICACAO'),
+      A('vigencia', 'Ciência, vigência e procedimentos', !!p.vigenciaInicio || CONCEDIDOS.includes(s), b.geraAto ? 'A vigência começa na publicação do Ato Declaratório' : 'A vigência começa na homologação do parecer',
+        s === 'CIENCIA_PENDENTE' || s === 'ARQUIVAMENTO_PENDENTE' || dv.procedimentos.some((x) => x.situacao === 'ABERTO')),
+      A('recursos', 'Decisão e recursos', !!dv.decisaoEm || dv.recursos.length > 0, 'A aba abre quando houver decisão de indeferimento, suspensão ou cassação',
+        s === 'RECURSO' || (DECISOES.includes(s) && !dv.decisaoCienciaEm)),
       A('comunicacoes', 'Comunicações', true, null),
       A('historico', 'Histórico e tramitação', true, null),
     ];
@@ -343,6 +398,23 @@ export class DemoBackend {
     const distribui = this.pode(r, 'PROCESSO_DISTRIBUIR');
     const resp = p.resumo.responsavelNome === this.usuario(r).nome;
     const naoResp = p.resumo.responsavelNome ? 'O processo está distribuído para ' + p.resumo.responsavelNome : 'O processo ainda não foi distribuído pela Coordenação';
+    const analista = this.pode(r, 'PARECER_ELABORAR') && (distribui || resp);
+    const motivoAnalista = !this.pode(r, 'PARECER_ELABORAR') ? 'A análise jurídica é feita pela Tributação' : naoResp;
+    const dv = p.desvios;
+    const procAberto = dv.procedimentos.some((x) => x.situacao === 'ABERTO');
+    const procedimentos = (suspensao: boolean) => {
+      const abre = this.pode(r, 'PROCEDIMENTO_ABRIR');
+      const decide = this.pode(r, 'PROCEDIMENTO_DECIDIR');
+      const motivoAbre = !abre ? 'O procedimento é iniciado pelo monitoramento ou pela Coordenação' : 'Já há procedimento em curso';
+      if (suspensao) m['ABRIR_SUSPENSAO'] = A(abre && !procAberto, motivoAbre);
+      m['ABRIR_CASSACAO'] = A(abre && !procAberto, motivoAbre);
+      if (procAberto) {
+        const x = dv.procedimentos.filter((y) => y.situacao === 'ABERTO').at(-1)!;
+        const vencido = x.prazoRegularizacao < hoje();
+        m['DECIDIR_PROCEDIMENTO'] = A(decide && vencido, !decide ? 'A decisão é registrada pela Coordenação' : 'Aguarde o fim do prazo de regularização');
+        m['ARQUIVAR_PROCEDIMENTO'] = A(decide, 'O arquivamento é registrado pela Coordenação');
+      }
+    };
     switch (p.resumo.status) {
       case 'RECEBIDO': {
         const pode = this.pode(r, 'PROCESSO_FORMALIZAR');
@@ -356,6 +428,9 @@ export class DemoBackend {
         const motivo = !this.pode(r, 'PARECER_ELABORAR') ? 'A análise jurídica é feita pela Tributação' : naoResp;
         m['DISTRIBUIR'] = A(distribui, 'A distribuição é feita pela Coordenação');
         m['ELEGIBILIDADE'] = A(pode, motivo);
+        m['ABRIR_DILIGENCIA'] = A(analista, motivoAnalista);
+        m['SOLICITAR_MANIFESTACAO'] = A(analista, motivoAnalista);
+        if (p.beneficio.exigeInstrucaoExterna) m['ENCAMINHAR_INSTRUCAO'] = A(analista && dv.instrucaoResultado !== 'FAVORAVEL', analista ? 'Deliberação favorável já registrada' : motivoAnalista);
         if (p.resumo.status === 'PARECER_ELABORACAO') {
           const ifOk = p.pecas.some((x) => x.tipo === 'INFORMACAO_FISCAL' && x.situacao === 'ASSINADA');
           m['EDITAR_PARECER'] = A(pode, motivo);
@@ -367,8 +442,47 @@ export class DemoBackend {
         const pode = this.pode(r, 'ATO_ELABORAR') && (distribui || resp);
         const motivo = !this.pode(r, 'ATO_ELABORAR') ? 'O ato é elaborado pela Tributação' : naoResp;
         m['DISTRIBUIR'] = A(distribui, 'A distribuição é feita pela Coordenação');
+        const termoFalta = !!p.beneficio.exigeTermo && !dv.termoAssinadoEm;
         m['EDITAR_ATO'] = A(pode, motivo);
-        m['CONCLUIR_ATO'] = A(pode, motivo);
+        if (p.beneficio.exigeTermo) m['ENVIAR_TERMO'] = A(pode && termoFalta, pode ? 'O termo já foi devolvido assinado' : motivo);
+        m['CONCLUIR_ATO'] = A(pode && !termoFalta, pode ? 'O benefício exige o termo de acordo assinado pela empresa' : motivo);
+        break;
+      }
+      case 'DILIGENCIA': m['CANCELAR_DILIGENCIA'] = A(analista, motivoAnalista); break;
+      case 'MANIFESTACAO': {
+        const setor = this.d.setorDe[this.usuario(r).login] ?? null;
+        const responde = this.pode(r, 'MANIFESTACAO_RESPONDER') && dv.manifestacoes.some((x) => x.situacao === 'PENDENTE' && x.setor === setor);
+        m['RESPONDER_MANIFESTACAO'] = A(responde, 'A manifestação é respondida pelo setor consultado');
+        m['SOLICITAR_MANIFESTACAO'] = A(analista, motivoAnalista);
+        break;
+      }
+      case 'INSTRUCAO_EXTERNA': m['REGISTRAR_INSTRUCAO'] = A(analista, motivoAnalista); break;
+      case 'TERMO_ACORDO': {
+        const pode = this.pode(r, 'ATO_ELABORAR') && (distribui || resp);
+        m['PRORROGAR_TERMO'] = A(pode, 'A prorrogação é feita pelo auditor responsável');
+        break;
+      }
+      case 'VIGENTE': case 'CONCEDIDO_ARQUIVADO': procedimentos(true); break;
+      case 'INDEFERIDO': case 'SUSPENSO': case 'CASSADO': {
+        if (!dv.decisaoCienciaEm) m['REGISTRAR_CIENCIA'] = A(this.pode(r, 'CIENCIA_REGISTRAR'), 'A ciência presencial é registrada pelo Atendimento');
+        if (p.resumo.status === 'INDEFERIDO') {
+          const arquiva = this.pode(r, 'PROCESSO_ARQUIVAR');
+          const fim = dv.fimPrazoRecursal;
+          const vencido = !!fim && fim < hoje();
+          m['ARQUIVAR'] = A(arquiva && vencido, !arquiva ? 'O arquivamento é feito pela Coordenação' : !fim ? 'Aguarde a ciência do indeferimento' : 'O prazo recursal ainda está em curso');
+        }
+        if (p.resumo.status === 'SUSPENSO') {
+          m['RESTABELECER'] = A(this.pode(r, 'PROCEDIMENTO_DECIDIR'), 'O restabelecimento é registrado pela Coordenação');
+          procedimentos(false);
+        }
+        break;
+      }
+      case 'RECURSO': {
+        const pode = this.pode(r, 'RECURSO_ENCAMINHAR');
+        const encaminhado = dv.recursos.some((x) => !x.resultado && !!x.encaminhadoEm);
+        const motivo = 'O encaminhamento e o registro da decisão são feitos pela Coordenação';
+        m['ENCAMINHAR_RECURSO'] = A(pode && !encaminhado, pode ? 'Recurso já encaminhado ao Conselho' : motivo);
+        m['DECIDIR_RECURSO'] = A(pode && encaminhado, pode ? 'Encaminhe antes o recurso ao Conselho' : motivo);
         break;
       }
       case 'HOMOLOGACAO': m['HOMOLOGAR'] = A(this.pode(r, 'PARECER_HOMOLOGAR'), 'A homologação é do Secretário de Estado da Fazenda'); break;
@@ -403,9 +517,26 @@ export class DemoBackend {
     const destino = this.setorDo(ST[novo][3]);
     p.resumo.status = novo;
     if (origem !== destino) { p.resumo.setor = destino; p.resumo.entradaSetorEm = agora(); }
-    if (!CARTEIRA.includes(novo)) { p.resumo.responsavelId = null; p.resumo.responsavelNome = null; }
+    if (!CARTEIRA.includes(novo) && !PAUSA_DA_ANALISE.includes(novo)) { p.resumo.responsavelId = null; p.resumo.responsavelNome = null; }
     this.evento(p, r, tipo, descricao, { statusAnterior: anterior, statusNovo: novo, setorOrigem: origem, setorDestino: origem !== destino ? destino : null });
     this.recalcular(p, r);
+  }
+  /** Trâmite para outro setor sem mudar a situação (ex.: recurso encaminhado ao Conselho). */
+  private tramitar(p: ProcessoDetalhe, r: Requisicao, papel: Papel, tipo: string, descricao: string) {
+    const origem = p.resumo.setor;
+    const destino = this.setorDo(papel);
+    p.resumo.setor = destino;
+    p.resumo.entradaSetorEm = agora();
+    this.evento(p, r, tipo, descricao, { setorOrigem: origem, setorDestino: destino });
+    this.recalcular(p, r);
+  }
+  /** Comunicação a partir do texto padrão do catálogo (mesma regra do ComunicacaoService). */
+  private comunicarModelo(p: ProcessoDetalhe, tipo: string, codigo: string, assunto: string, extras: Record<string, string>, prazoDias: number | null, marco: boolean) {
+    const v: Record<string, string> = { ...this.resolvidas(p), ...extras };
+    if (prazoDias != null) v['prazo'] ??= br(somarDias(hoje(), prazoDias));
+    const corpo = this.modelo(codigo)?.corpo ?? assunto;
+    this.comunicar(p, tipo, assunto, this.resolverTexto(corpo, v), prazoDias, marco);
+    return (this.d.comunicacoes[p.resumo.id] ?? [])[0];
   }
   private integrar(p: ProcessoDetalhe, demanda: string, descricao: string, servico: string, retorno: Record<string, unknown>) {
     const id = ++this.seq;
@@ -429,7 +560,7 @@ export class DemoBackend {
 
   private anexar(pid: number, r: Requisicao, origem: 'PORTAL' | 'INTERNO') {
     const p = this.p(pid);
-    if (origem === 'PORTAL') this.exigir(p, 'EM_FORMALIZACAO');
+    if (origem === 'PORTAL') this.exigir(p, 'EM_FORMALIZACAO', 'DILIGENCIA', 'TERMO_ACORDO');
     else this.exigirPermissao(r, 'PROCESSO_FORMALIZAR');
     const fd = r.corpo as FormData;
     const f = fd.get('arquivo') as File;
@@ -507,7 +638,8 @@ export class DemoBackend {
     return p;
   }
   private numeroPeca(p: ProcessoDetalhe, tipo: PecaResumo['tipo']) {
-    const suf = tipo === 'INFORMACAO_FISCAL' ? this.texto('numeracao.if.sufixo', '-IF') : tipo === 'PARECER' ? this.texto('numeracao.parecer.sufixo', '-PAR') : this.texto('numeracao.ato.sufixo', '-AD');
+    const suf = tipo === 'INFORMACAO_FISCAL' ? this.texto('numeracao.if.sufixo', '-IF') : tipo === 'PARECER' ? this.texto('numeracao.parecer.sufixo', '-PAR')
+      : tipo === 'TERMO_ACORDO' ? this.texto('numeracao.termo.sufixo', '-TA') : this.texto('numeracao.ato.sufixo', '-AD');
     return p.resumo.numero.slice(0, 4) + '/' + p.resumo.numero.slice(-4) + suf;
   }
   private novaPeca(p: ProcessoDetalhe, r: Requisicao, tipo: PecaResumo['tipo'], extra: Partial<PecaResumo> = {}): PecaResumo {
@@ -596,6 +728,7 @@ export class DemoBackend {
       numeroInformacaoFiscal: p.pecas.find((x) => x.tipo === 'INFORMACAO_FISCAL' && x.situacao === 'ASSINADA')?.numero,
       numeroParecer: p.pecas.find((x) => x.tipo === 'PARECER')?.numero, numeroAto: p.pecas.find((x) => x.tipo === 'ATO_DECLARATORIO')?.numero,
       contrapartidas: p.contrapartidas.length ? p.contrapartidas.map((c) => c.descricao).join('; ') : null,
+      motivoDecisao: p.desvios?.motivoDecisao, numeroTermo: p.pecas.find((x) => x.tipo === 'TERMO_ACORDO')?.numero,
     };
     return Object.fromEntries(Object.entries(v).filter(([, x]) => x != null)) as Record<string, string>;
   }
@@ -635,13 +768,13 @@ export class DemoBackend {
     const tp = tipo === 'ato' ? 'ATO_DECLARATORIO' : 'PARECER';
     const peca = [...p.pecas].reverse().find((x) => x.tipo === tp);
     if (!peca) throw negocio('Peça ainda não gerada para este processo.');
-    const tipoModelo = tipo === 'ato' ? 'ATO_DECLARATORIO' : 'PARECER_FAVORAVEL';
-    const modelo = this.d.textos.find((t) => t.id === this.modelos[pid]?.[tipo]) ?? this.d.textos.find((t) => t.nome === peca.textoPadrao) ?? this.d.textos.find((t) => t.tipo === tipoModelo)!;
+    const tipos = tipo === 'ato' ? ['ATO_DECLARATORIO'] : ['PARECER_FAVORAVEL', 'PARECER_DESFAVORAVEL'];
+    const modelo = this.d.textos.find((t) => t.id === this.modelos[pid]?.[tipo]) ?? this.d.textos.find((t) => t.nome === peca.textoPadrao) ?? this.d.textos.find((t) => t.tipo === tipos[0])!;
     const assinada = peca.situacao === 'ASSINADA';
     const tags = this.tagsDa(p, tipo, modelo.corpo, assinada);
     return {
-      pecaId: peca.id, tipo: tp, numero: peca.numero, situacao: peca.situacao, textoPadraoId: modelo.id, textoPadraoNome: modelo.nome, versaoTexto: modelo.versaoTexto,
-      modelos: this.d.textos.filter((t) => t.tipo === tipoModelo && t.ativo).map((t) => ({ id: t.id, nome: t.nome, versao: t.versaoTexto })),
+      pecaId: peca.id, tipo: tp, numero: peca.numero, situacao: peca.situacao, textoPadraoId: modelo.id, textoPadraoNome: modelo.nome, textoPadraoTipo: modelo.tipo, versaoTexto: modelo.versaoTexto,
+      modelos: this.d.textos.filter((t) => tipos.includes(t.tipo) && t.ativo).map((t) => ({ id: t.id, nome: t.nome, versao: t.versaoTexto })),
       paragrafos: assinada && peca.corpoFinal ? this.paragrafos(peca.corpoFinal, []) : this.paragrafos(modelo.corpo, tags),
       tags, pendentes: assinada ? 0 : tags.filter((t) => t.pendente).length, autorNome: peca.autorNome, assinadaEm: peca.assinadaEm,
     };
@@ -674,9 +807,21 @@ export class DemoBackend {
     this.exigir(p, 'PARECER_ELABORACAO');
     this.exigirResponsavel(p, r);
     if (!p.pecas.some((x) => x.tipo === 'INFORMACAO_FISCAL' && x.situacao === 'ASSINADA')) throw negocio('A Informação Fiscal ainda não foi emitida: o parecer não pode ser finalizado.');
+    const e = this.editor(pid, 'parecer', r);
+    if (e.textoPadraoTipo === 'PARECER_DESFAVORAVEL') {
+      const motivo = r.corpo?.motivo;
+      if (!motivo || !this.d.listas.motivosIndeferimento.includes(motivo)) throw negocio('Informe o motivo estruturado do indeferimento.');
+      const des = this.finalizar(p, 'parecer', r);
+      des.conclusao = 'DESFAVORAVEL';
+      des.conclusaoRotulo = 'desfavorável';
+      p.desvios.motivoDecisao = motivo;
+      this.mover(p, r, 'HOMOLOGACAO', 'PARECER', `Parecer nº ${des.numero} assinado (desfavorável) · motivo: ${motivo}. Encaminhado à homologação do indeferimento pelo Secretário.`);
+      return p;
+    }
+    if (p.beneficio.exigeInstrucaoExterna && p.desvios.instrucaoResultado !== 'FAVORAVEL') throw negocio('O benefício exige instrução prévia da Agência e deliberação favorável do CONDI antes do parecer favorável.');
     const par = this.finalizar(p, 'parecer', r);
     par.conclusao = 'FAVORAVEL';
-    par.conclusaoRotulo = 'favoravel';
+    par.conclusaoRotulo = 'favorável';
     if (p.beneficio.geraAto) {
       const m = this.d.textos.find((t) => t.tipo === 'ATO_DECLARATORIO')!;
       this.novaPeca(p, r, 'ATO_DECLARATORIO', { textoPadrao: m.nome });
@@ -713,6 +858,7 @@ export class DemoBackend {
     const p = this.p(pid);
     this.exigir(p, 'ATO_ELABORACAO');
     this.exigirResponsavel(p, r);
+    if (p.beneficio.exigeTermo && !p.desvios.termoAssinadoEm) throw negocio('O benefício exige termo de acordo assinado pela empresa. Envie o termo e aguarde a devolução assinada.');
     const ato = this.finalizar(p, 'ato', r);
     this.mover(p, r, 'HOMOLOGACAO', 'ATO', `Ato Declaratório nº ${ato.numero} concluído e encaminhado, com o parecer, à homologação do Secretário.`);
     return p;
@@ -724,6 +870,14 @@ export class DemoBackend {
     const nome = this.usuario(r).nome;
     p.homologadoEm = agora();
     p.homologadoPor = nome;
+    const par = [...p.pecas].reverse().find((x) => x.tipo === 'PARECER');
+    if (par?.conclusao === 'DESFAVORAVEL') {
+      p.desvios.decisaoEm = agora();
+      this.mover(p, r, 'INDEFERIDO', 'HOMOLOGACAO', `Indeferimento homologado pelo ${nome} · motivo: ${p.desvios.motivoDecisao}. O contribuinte foi comunicado; o prazo recursal corre da ciência.`);
+      this.comunicarModelo(p, 'INDEFERIMENTO', 'COM_INDEFERIMENTO', 'Decisão de indeferimento — prazo para recurso',
+        { justificativaTecnica: this.valores[pid]?.['parecer']?.['justificativaTecnica'] ?? '' }, this.inteiro('prazo.recurso_dias', 30), true);
+      return p;
+    }
     if (p.beneficio.geraAto) {
       p.publicacao.encaminhadoEm = agora();
       this.mover(p, r, 'PUBLICACAO', 'HOMOLOGACAO', `Parecer e Ato Declaratório homologados pelo ${nome}. Matéria encaminhada para publicação no Diário Oficial.`);
@@ -768,6 +922,7 @@ export class DemoBackend {
   private ciencia(pid: number, tipo: 'PORTAL' | 'PRESENCIAL', r: Requisicao) {
     if (tipo === 'PRESENCIAL') this.exigirPermissao(r, 'CIENCIA_REGISTRAR');
     const p = this.p(pid);
+    if (DECISOES.includes(p.resumo.status)) return this.cienciaDecisao(p, tipo, r);
     this.exigir(p, 'CIENCIA_PENDENTE');
     const nome = this.usuario(r).nome;
     Object.assign(p, { cienciaEm: agora(), cienciaTipo: tipo, cienciaPor: nome });
@@ -781,9 +936,339 @@ export class DemoBackend {
   private arquivar(pid: number, r: Requisicao) {
     this.exigirPermissao(r, 'PROCESSO_ARQUIVAR');
     const p = this.p(pid);
+    if (p.resumo.status === 'INDEFERIDO') {
+      const fim = p.desvios.fimPrazoRecursal;
+      if (!fim) throw negocio('Aguarde a ciência do indeferimento: é dela que corre o prazo recursal.');
+      if (fim >= hoje()) throw negocio(`O prazo recursal termina em ${br(fim)}. Arquive depois dessa data.`);
+      p.arquivadoEm = agora();
+      this.mover(p, r, 'ARQUIVADO', 'ARQUIVAMENTO', 'Processo arquivado: indeferimento definitivo, sem recurso no prazo.');
+      return p;
+    }
     this.exigir(p, 'ARQUIVAMENTO_PENDENTE');
     p.arquivadoEm = agora();
     this.mover(p, r, 'CONCEDIDO_ARQUIVADO', 'ARQUIVAMENTO', 'Processo arquivado. Benefício concedido por parecer homologado, em acompanhamento pelo monitoramento.');
+    return p;
+  }
+
+  // ===================================================================== fase 2: desvios do fluxo
+  private cienciaDecisao(p: ProcessoDetalhe, tipo: 'PORTAL' | 'PRESENCIAL', r: Requisicao) {
+    if (tipo === 'PRESENCIAL') this.exigirPermissao(r, 'CIENCIA_REGISTRAR');
+    if (p.desvios.decisaoCienciaEm) throw negocio('A ciência desta decisão já foi registrada.');
+    p.desvios.decisaoCienciaEm = agora();
+    (this.d.comunicacoes[p.resumo.id] ?? []).filter((c) => c.marcoProcesso && !c.cienciaEm).forEach((c) => Object.assign(c, { cienciaEm: agora(), cienciaTipo: tipo }));
+    this.recalcular(p, r);
+    this.evento(p, r, 'CIENCIA_DECISAO', `Ciência da decisão (${p.resumo.statusRotulo.toLowerCase()}) registrada · ${tipo.toLowerCase()}. Prazo recursal até ${br(p.desvios.fimPrazoRecursal!)}.`);
+    return p;
+  }
+  /** Fim de diligência, manifestação ou instrução externa: volta à situação anterior na Tributação. */
+  private voltar(p: ProcessoDetalhe, r: Requisicao, tipo: string, descricao: string) {
+    const destino = (p.desvios.statusRetorno as StatusProcesso | null) ?? 'ANALISE_JURIDICA';
+    p.desvios.statusRetorno = null;
+    this.mover(p, r, destino, tipo, descricao);
+  }
+  private abrirDiligencia(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'ANALISE_JURIDICA', 'PARECER_ELABORACAO');
+    this.exigirResponsavel(p, r);
+    const c = r.corpo ?? {};
+    if (!c.tipo || !String(c.descricao ?? '').trim()) throw negocio('Informe o tipo e o que está sendo solicitado ao contribuinte.');
+    const dias = this.inteiro('prazo.diligencia_dias', 15);
+    const x = { id: ++this.seq, tipo: c.tipo, descricao: String(c.descricao).trim(), prazo: somarDias(hoje(), dias), abertaEm: agora(), abertaPor: this.usuario(r).nome,
+      resposta: null, documentoId: null, respondidaEm: null, respondidaPor: null, situacao: 'ABERTA' as const };
+    p.desvios.diligencias.push(x);
+    this.comunicarModelo(p, 'DILIGENCIA', 'COM_DILIGENCIA', 'Diligência — ' + x.descricao, { solicitacao: x.descricao }, dias, false);
+    p.desvios.statusRetorno = p.resumo.status;
+    this.mover(p, r, 'DILIGENCIA', 'DILIGENCIA', `Diligência aberta (${String(c.tipo).toLowerCase()}): ${x.descricao} · prazo até ${br(x.prazo)}. O processo aguarda a resposta do contribuinte.`);
+    return p;
+  }
+  private diligencia(p: ProcessoDetalhe, did: number) {
+    const x = p.desvios.diligencias.find((d) => d.id === did);
+    if (!x) throw new ErroDemo(404, 'Não encontrado', 'Diligência não encontrada: ' + did);
+    return x;
+  }
+  private cancelarDiligencia(pid: number, did: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'DILIGENCIA');
+    this.exigirResponsavel(p, r);
+    const motivo = String(r.corpo?.motivo ?? '').trim();
+    if (!motivo) throw negocio('Informe o motivo do cancelamento.');
+    const x = this.diligencia(p, did);
+    Object.assign(x, { situacao: 'CANCELADA', resposta: 'Cancelada: ' + motivo });
+    this.voltar(p, r, 'DILIGENCIA', `Diligência cancelada: ${x.descricao} · ${motivo}. O processo voltou à análise.`);
+    return p;
+  }
+  private responderDiligencia(pid: number, did: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.representado(r, p.resumo.interessadoId);
+    this.exigir(p, 'DILIGENCIA');
+    const x = this.diligencia(p, did);
+    if (x.situacao !== 'ABERTA') throw negocio('Esta diligência já foi respondida ou cancelada.');
+    const fd = r.corpo as FormData;
+    const resposta = String(fd.get('resposta') ?? '').trim();
+    const f = fd.get('arquivo') as File | null;
+    if (!resposta && !f) throw negocio('Informe a resposta ou anexe o documento solicitado.');
+    if (x.tipo === 'DOCUMENTO' && !f) throw negocio('A diligência solicita documento: anexe o arquivo.');
+    if (f) {
+      const doc = this.anexarLivre(p, r, f, 'Resposta à diligência: ' + x.descricao);
+      x.documentoId = doc.id;
+    }
+    Object.assign(x, { resposta: resposta || null, respondidaEm: agora(), respondidaPor: this.usuario(r).nome, situacao: 'RESPONDIDA' });
+    (this.d.comunicacoes[pid] ?? []).filter((c) => c.tipo === 'DILIGENCIA' && !c.cienciaEm).forEach((c) => Object.assign(c, { cienciaEm: agora(), cienciaTipo: 'PORTAL' }));
+    this.voltar(p, r, 'DILIGENCIA', `Diligência respondida pelo contribuinte: ${x.descricao}. O processo voltou à análise.`);
+    return this.processoPortal(pid, r);
+  }
+  /** Documento avulso enviado pelo portal (resposta de diligência, termo assinado). */
+  private anexarLivre(p: ProcessoDetalhe, r: Requisicao, f: File, descricao: string) {
+    if (!['application/pdf', 'image/png', 'image/jpeg'].includes(f.type)) throw negocio('Formato não aceito. Envie PDF, PNG ou JPEG.');
+    if (f.size > 20 * 1024 * 1024) throw negocio('O arquivo excede o limite de 20 MB.');
+    const atual = { id: ++this.seq, documentoExigidoId: null, descricao, nomeArquivo: f.name, tamanho: f.size, situacao: 'ENVIADO' as const,
+      motivoRecusa: null, origem: 'PORTAL' as const, enviadoEm: agora(), enviadoPor: this.usuario(r).login, analisadoEm: null };
+    p.documentosExigidos.push({ documentoExigidoId: null, descricao, obrigatorio: false, atual });
+    this.evento(p, r, 'DOCUMENTO', `Documento anexado (portal): ${descricao} · ${f.name}`);
+    return atual;
+  }
+  private solicitarManifestacao(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'ANALISE_JURIDICA', 'PARECER_ELABORACAO', 'MANIFESTACAO');
+    this.exigirResponsavel(p, r);
+    const c = r.corpo ?? {};
+    const s = this.d.setores.find((x) => x.id === c.setorId);
+    if (!s || s.tipo !== 'INTERNO') throw negocio('Escolha o setor interno que deve se manifestar.');
+    if (!String(c.pergunta ?? '').trim()) throw negocio('Descreva o que o setor deve esclarecer.');
+    const x = { id: ++this.seq, setorId: s.id, setor: s.sigla, pergunta: String(c.pergunta).trim(), prazo: somarDias(hoje(), this.inteiro('prazo.manifestacao_dias', 10)),
+      solicitadaEm: agora(), solicitadaPor: this.usuario(r).nome, resposta: null, respondidaEm: null, respondidaPor: null, situacao: 'PENDENTE' as const };
+    p.desvios.manifestacoes.push(x);
+    const desc = `Manifestação complementar solicitada a ${s.sigla}: ${x.pergunta} · prazo até ${br(x.prazo)}.`;
+    if (p.resumo.status === 'MANIFESTACAO') { this.evento(p, r, 'MANIFESTACAO', desc); this.recalcular(p, r); }
+    else {
+      p.desvios.statusRetorno = p.resumo.status;
+      this.mover(p, r, 'MANIFESTACAO', 'MANIFESTACAO', desc + ' O parecer não pode ser finalizado enquanto houver manifestação pendente.');
+    }
+    return p;
+  }
+  private responderManifestacao(pid: number, mid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'MANIFESTACAO_RESPONDER');
+    const p = this.p(pid);
+    this.exigir(p, 'MANIFESTACAO');
+    const x = p.desvios.manifestacoes.find((m) => m.id === mid);
+    if (!x) throw new ErroDemo(404, 'Não encontrado', 'Manifestação não encontrada: ' + mid);
+    if (x.situacao !== 'PENDENTE') throw negocio('Esta manifestação já foi respondida.');
+    if (x.setor !== (this.d.setorDe[this.usuario(r).login] ?? null)) throw negocio('A manifestação foi solicitada a outro setor.');
+    const texto = String(r.corpo?.texto ?? '').trim();
+    if (!texto) throw negocio('Escreva a manifestação do setor.');
+    Object.assign(x, { resposta: texto, respondidaEm: agora(), respondidaPor: this.usuario(r).nome, situacao: 'RESPONDIDA' });
+    if (!p.desvios.manifestacoes.some((m) => m.situacao === 'PENDENTE')) {
+      this.voltar(p, r, 'MANIFESTACAO', `Manifestação de ${x.setor} registrada. Não há manifestações pendentes: o processo voltou à análise.`);
+    } else {
+      this.evento(p, r, 'MANIFESTACAO', `Manifestação de ${x.setor} registrada. Ainda há manifestações pendentes.`);
+      this.recalcular(p, r);
+    }
+    return p;
+  }
+  private encaminharInstrucao(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'ANALISE_JURIDICA', 'PARECER_ELABORACAO');
+    this.exigirResponsavel(p, r);
+    if (!p.beneficio.exigeInstrucaoExterna) throw negocio('O benefício não exige instrução prévia pela Agência nem deliberação do CONDI.');
+    p.desvios.statusRetorno = p.resumo.status;
+    p.desvios.instrucaoEnviadaEm = agora();
+    p.desvios.instrucaoResultado = null;
+    this.mover(p, r, 'INSTRUCAO_EXTERNA', 'INSTRUCAO_EXTERNA', 'Projeto encaminhado para instrução pela Agência de Desenvolvimento e deliberação do CONDI. O retorno é registrado no processo.');
+    return p;
+  }
+  private registrarInstrucao(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'INSTRUCAO_EXTERNA');
+    const c = r.corpo ?? {};
+    if (c.resultado !== 'FAVORAVEL' && c.resultado !== 'DESFAVORAVEL') throw negocio('Informe se a deliberação foi favorável ou desfavorável.');
+    if (!String(c.detalhe ?? '').trim()) throw negocio('Informe a deliberação (número, data e conclusão).');
+    p.desvios.instrucaoResultado = c.resultado;
+    p.desvios.instrucaoDetalhe = String(c.detalhe).trim();
+    this.voltar(p, r, 'INSTRUCAO_EXTERNA', `Retorno da instância externa registrado: deliberação ${c.resultado.toLowerCase()} · ${p.desvios.instrucaoDetalhe}. O processo voltou à análise.`);
+    return p;
+  }
+  private enviarTermo(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'ATO_ELABORACAO');
+    this.exigirResponsavel(p, r);
+    if (!p.beneficio.exigeTermo) throw negocio('O modelo deste benefício não prevê termo de acordo.');
+    if (p.desvios.termoAssinadoEm) throw negocio('O termo de acordo já foi devolvido assinado.');
+    const e = this.editor(pid, 'ato', r);
+    if (e.pendentes > 0) throw negocio(`Preencha as cláusulas do ato antes de enviar o termo: há ${e.pendentes} tag(s) pendente(s).`);
+    const modelo = this.d.textos.find((t) => t.tipo === 'TERMO_ACORDO');
+    const termo = p.pecas.find((x) => x.tipo === 'TERMO_ACORDO') ?? this.novaPeca(p, r, 'TERMO_ACORDO');
+    const valores = { ...this.resolvidas(p), ...Object.fromEntries(e.tags.filter((t) => t.valor).map((t) => [t.chave, t.valor!])) };
+    Object.assign(termo, { situacao: 'ASSINADA', assinadaEm: agora(), textoPadrao: modelo?.nome ?? null, corpoFinal: this.resolverTexto(modelo?.corpo ?? '', valores) });
+    const dias = this.inteiro('prazo.termo_dias', 15);
+    Object.assign(p.desvios, { termoEnviadoEm: agora(), termoPrazo: somarDias(hoje(), dias), termoTexto: termo.corpoFinal });
+    this.comunicarModelo(p, 'TERMO', 'COM_TERMO', 'Termo de acordo disponível para assinatura', {}, dias, false);
+    this.mover(p, r, 'TERMO_ACORDO', 'TERMO', `Minuta do termo de acordo nº ${termo.numero} disponibilizada à empresa para assinatura digital · prazo até ${br(p.desvios.termoPrazo!)}.`);
+    return p;
+  }
+  private prorrogarTermo(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.exigir(p, 'TERMO_ACORDO');
+    const c = r.corpo ?? {};
+    const dias = Number(c.dias);
+    if (!(dias >= 1 && dias <= 60) || !String(c.justificativa ?? '').trim()) throw negocio('Informe de 1 a 60 dias e a justificativa da prorrogação.');
+    p.desvios.termoPrazo = somarDias(p.desvios.termoPrazo ?? hoje(), dias);
+    this.evento(p, r, 'TERMO', `Prazo do termo de acordo prorrogado por ${dias} dia(s), até ${br(p.desvios.termoPrazo)} · ${String(c.justificativa).trim()}`);
+    this.recalcular(p, r);
+    return p;
+  }
+  private devolverTermo(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.representado(r, p.resumo.interessadoId);
+    this.exigir(p, 'TERMO_ACORDO');
+    const f = (r.corpo as FormData).get('arquivo') as File | null;
+    if (!f) throw negocio('Anexe o termo de acordo assinado digitalmente.');
+    this.anexarLivre(p, r, f, 'Termo de acordo assinado pela empresa');
+    p.desvios.termoAssinadoEm = agora();
+    (this.d.comunicacoes[pid] ?? []).filter((c) => c.tipo === 'TERMO' && !c.cienciaEm).forEach((c) => Object.assign(c, { cienciaEm: agora(), cienciaTipo: 'PORTAL' }));
+    this.mover(p, r, 'ATO_ELABORACAO', 'TERMO', 'Termo de acordo devolvido assinado pela empresa. O ato pode ser concluído.');
+    return this.processoPortal(pid, r);
+  }
+  private apresentarRecurso(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.representado(r, p.resumo.interessadoId);
+    this.exigir(p, 'INDEFERIDO', 'SUSPENSO', 'CASSADO');
+    const c = r.corpo ?? {};
+    if (String(c.razoes ?? '').trim().length < 20) throw negocio('Apresente as razões do recurso (ao menos 20 caracteres).');
+    if (!c.cienteSemEfeitoSuspensivo) throw negocio('Declare ciência de que o recurso não tem efeito suspensivo.');
+    if (!p.desvios.decisaoCienciaEm) this.cienciaDecisao(p, 'PORTAL', r);
+    const fim = p.desvios.fimPrazoRecursal!;
+    if (fim < hoje()) throw negocio(`O prazo recursal terminou em ${br(fim)}.`);
+    const decisao = p.resumo.status === 'SUSPENSO' ? 'SUSPENSAO' : p.resumo.status === 'CASSADO' ? 'CASSACAO' : 'INDEFERIMENTO';
+    p.desvios.recursos.push({ id: ++this.seq, decisaoRecorrida: decisao, razoes: String(c.razoes).trim(), apresentadoEm: agora(), apresentadoPor: this.usuario(r).nome,
+      encaminhadoEm: null, resultado: null, numeroAcordao: null, fundamento: null, decididoEm: null });
+    this.mover(p, r, 'RECURSO', 'RECURSO', `Recurso contra ${decisao.toLowerCase()} apresentado pelo contribuinte, com declaração de ciência do efeito não suspensivo. Aguardando encaminhamento ao Conselho.`);
+    return this.processoPortal(pid, r);
+  }
+  private recursoAberto(p: ProcessoDetalhe) {
+    const x = [...p.desvios.recursos].reverse().find((y) => !y.resultado);
+    if (!x) throw negocio('Não há recurso pendente neste processo.');
+    return x;
+  }
+  private encaminharRecurso(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'RECURSO_ENCAMINHAR');
+    const p = this.p(pid);
+    this.exigir(p, 'RECURSO');
+    const x = this.recursoAberto(p);
+    if (x.encaminhadoEm) throw negocio('O recurso já foi encaminhado ao Conselho.');
+    x.encaminhadoEm = agora();
+    this.tramitar(p, r, 'RECURSO', 'RECURSO', 'Recurso encaminhado ao Conselho de Recursos Fiscais com as razões e os documentos apresentados.');
+    return p;
+  }
+  private decidirRecurso(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'RECURSO_ENCAMINHAR');
+    const p = this.p(pid);
+    this.exigir(p, 'RECURSO');
+    const x = this.recursoAberto(p);
+    if (!x.encaminhadoEm) throw negocio('Encaminhe antes o recurso ao Conselho.');
+    const c = r.corpo ?? {};
+    if (!['PROVIDO', 'NAO_PROVIDO'].includes(c.resultado) || !String(c.numeroAcordao ?? '').trim()) throw negocio('Informe o resultado e o número do acórdão do Conselho.');
+    Object.assign(x, { resultado: c.resultado, numeroAcordao: String(c.numeroAcordao).trim(), fundamento: c.fundamento || null, decididoEm: agora() });
+    const provido = c.resultado === 'PROVIDO';
+    const desc = `Decisão do Conselho registrada: recurso ${provido ? 'provido' : 'não provido'} · acórdão ${x.numeroAcordao}. `;
+    let consequencia: string;
+    if (x.decisaoRecorrida === 'INDEFERIMENTO') {
+      if (provido) {
+        Object.assign(p.desvios, { motivoDecisao: null, decisaoEm: null, decisaoCienciaEm: null });
+        p.homologadoEm = null;
+        p.homologadoPor = null;
+        consequencia = 'A solicitação volta à análise jurídica da Secretaria para novo parecer.';
+        this.mover(p, r, 'ANALISE_JURIDICA', 'RECURSO', desc + consequencia);
+      } else {
+        consequencia = 'O indeferimento foi mantido e o processo foi arquivado.';
+        p.arquivadoEm = agora();
+        this.mover(p, r, 'ARQUIVADO', 'RECURSO', desc + consequencia);
+      }
+    } else if (provido) {
+      const proc = [...p.desvios.procedimentos].reverse().find((y) => y.situacao === 'DECIDIDO');
+      const volta = (proc && this.anteriorProc[proc.id]) || 'VIGENTE';
+      if (proc) Object.assign(proc, { situacao: 'RESTABELECIDO', encerradoEm: agora(), encerramento: 'Recurso provido pelo Conselho · acórdão ' + x.numeroAcordao });
+      if (x.decisaoRecorrida === 'CASSACAO' && p.vigenciaInicio && p.beneficio.prazoMeses) p.vigenciaFim = somarMeses(p.vigenciaInicio, p.beneficio.prazoMeses);
+      Object.assign(p.desvios, { motivoDecisao: null, statusRetorno: null });
+      consequencia = 'O benefício foi restabelecido.';
+      this.mover(p, r, volta, 'RECURSO', desc + consequencia);
+    } else {
+      const cassacao = x.decisaoRecorrida === 'CASSACAO';
+      consequencia = `A decisão de ${cassacao ? 'cassação' : 'suspensão'} foi mantida.`;
+      this.mover(p, r, cassacao ? 'CASSADO' : 'SUSPENSO', 'RECURSO', desc + consequencia);
+    }
+    this.comunicarModelo(p, 'DECISAO_RECURSO', 'COM_DECISAO_RECURSO', 'Decisão do recurso — ' + (provido ? 'provido' : 'não provido'),
+      { resultadoRecurso: provido ? 'DAR PROVIMENTO ao recurso' : 'NEGAR PROVIMENTO ao recurso', consequencia }, null, false);
+    return p;
+  }
+  private abrirProcedimento(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PROCEDIMENTO_ABRIR');
+    const p = this.p(pid);
+    const c = r.corpo ?? {};
+    if (c.tipo === 'CASSACAO') this.exigir(p, 'VIGENTE', 'CONCEDIDO_ARQUIVADO', 'SUSPENSO');
+    else this.exigir(p, ...EM_FRUICAO);
+    if (!c.tipo || !this.d.listas.motivosProcedimento.includes(c.motivo)) throw negocio('Informe o tipo e o motivo estruturado do procedimento.');
+    if (!String(c.fundamentacao ?? '').trim()) throw negocio('Informe a fundamentação do procedimento.');
+    if (p.desvios.procedimentos.some((x) => x.situacao === 'ABERTO')) throw negocio('Já existe procedimento em curso para este benefício.');
+    const dias = Number(c.prazoDias) || this.d.listas.prazoRegularizacao;
+    const x = { id: ++this.seq, tipo: c.tipo, motivo: c.motivo, fundamentacao: String(c.fundamentacao).trim(), prazoRegularizacao: somarDias(hoje(), dias), abertoEm: agora(),
+      abertoPor: this.usuario(r).nome, situacao: 'ABERTO' as const, decididoEm: null, decididoPor: null, encerradoEm: null, encerramento: null };
+    p.desvios.procedimentos.push(x);
+    this.anteriorProc[x.id] = p.resumo.status === 'SUSPENSO' && p.desvios.statusRetorno ? (p.desvios.statusRetorno as StatusProcesso) : p.resumo.status;
+    const nome = c.tipo === 'CASSACAO' ? 'cassação' : 'suspensão';
+    this.comunicarModelo(p, 'NOTIFICACAO_PREVIA', 'COM_NOTIFICACAO_PREVIA', `Notificação prévia de ${nome} do benefício`,
+      { procedimento: nome, motivoDecisao: c.motivo, fundamentacao: x.fundamentacao }, dias, false);
+    this.evento(p, r, 'PROCEDIMENTO', `Procedimento de ${nome} iniciado · motivo: ${c.motivo}. Notificação prévia enviada com prazo para regularizar até ${br(x.prazoRegularizacao)}.`);
+    this.recalcular(p, r);
+    return p;
+  }
+  private procedimentoAberto(p: ProcessoDetalhe) {
+    const x = [...p.desvios.procedimentos].reverse().find((y) => y.situacao === 'ABERTO');
+    if (!x) throw negocio('Não há procedimento de suspensão ou cassação em curso.');
+    return x;
+  }
+  private decidirProcedimento(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PROCEDIMENTO_DECIDIR');
+    const p = this.p(pid);
+    const x = this.procedimentoAberto(p);
+    if (x.prazoRegularizacao >= hoje()) throw negocio(`Aguarde o fim do prazo de regularização (${br(x.prazoRegularizacao)}) antes de decidir.`);
+    const nome = this.usuario(r).nome;
+    Object.assign(x, { situacao: 'DECIDIDO', decididoEm: agora(), decididoPor: nome });
+    Object.assign(p.desvios, { motivoDecisao: x.motivo, decisaoEm: agora(), decisaoCienciaEm: null });
+    const recurso = this.inteiro('prazo.recurso_dias', 30);
+    if (x.tipo === 'SUSPENSAO') {
+      p.desvios.statusRetorno = this.anteriorProc[x.id] ?? p.resumo.status;
+      this.mover(p, r, 'SUSPENSO', 'SUSPENSAO', `Suspensão do benefício decidida por ${nome} · motivo: ${x.motivo}. Intervalo de suspensão aberto até o restabelecimento.`);
+      this.comunicarModelo(p, 'SUSPENSAO', 'COM_SUSPENSAO', 'Suspensão do benefício — prazo para recurso', {}, recurso, true);
+    } else {
+      p.desvios.statusRetorno = null;
+      p.vigenciaFim = hoje();
+      this.mover(p, r, 'CASSADO', 'CASSACAO', `Cassação do benefício decidida por ${nome} · motivo: ${x.motivo}. Vigência encerrada e impedimento de pleitear novos incentivos por período determinado.`);
+      this.comunicarModelo(p, 'CASSACAO', 'COM_CASSACAO', 'Cassação do benefício — prazo para recurso', {}, recurso, true);
+    }
+    return p;
+  }
+  private arquivarProcedimento(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PROCEDIMENTO_DECIDIR');
+    const p = this.p(pid);
+    const x = this.procedimentoAberto(p);
+    const motivo = String(r.corpo?.motivo ?? '').trim();
+    if (!motivo) throw negocio('Informe por que o procedimento foi encerrado (ex.: regularização comprovada).');
+    Object.assign(x, { situacao: 'ARQUIVADO', encerradoEm: agora(), encerramento: motivo });
+    this.evento(p, r, 'PROCEDIMENTO', `Procedimento de ${x.tipo.toLowerCase()} arquivado sem decisão: ${motivo}`);
+    this.recalcular(p, r);
+    return p;
+  }
+  private restabelecer(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PROCEDIMENTO_DECIDIR');
+    const p = this.p(pid);
+    this.exigir(p, 'SUSPENSO');
+    const motivo = String(r.corpo?.motivo ?? '').trim();
+    if (!motivo) throw negocio('Informe o fundamento do restabelecimento.');
+    const proc = [...p.desvios.procedimentos].reverse().find((y) => y.situacao === 'DECIDIDO');
+    if (proc) Object.assign(proc, { situacao: 'RESTABELECIDO', encerradoEm: agora(), encerramento: motivo });
+    const volta = (p.desvios.statusRetorno as StatusProcesso | null) ?? 'VIGENTE';
+    Object.assign(p.desvios, { statusRetorno: null, motivoDecisao: null });
+    this.mover(p, r, volta, 'RESTABELECIMENTO', `Benefício restabelecido por ${this.usuario(r).nome} · ${motivo}. Intervalo de suspensão encerrado.`);
     return p;
   }
 
@@ -807,6 +1292,27 @@ export class DemoBackend {
         out.push(rec.length
           ? { id: 'rec' + rec[0].atual!.id, processoId: p.resumo.id, numeroProcesso: p.resumo.numero, tipo: 'Documento recusado', titulo: 'Novo envio: ' + rec[0].descricao, contexto: `Processo ${p.resumo.numero} · recusado pelo Atendimento · ${rec[0].atual!.motivoRecusa}`, prazo, diasRestantes: dif(prazo), acao: 'Reenviar documento', comunicacaoId: null }
           : { id: 'form' + p.resumo.id, processoId: p.resumo.id, numeroProcesso: p.resumo.numero, tipo: faltam.length ? 'Documento obrigatório' : 'Envio', titulo: faltam.length ? `Completar ${faltam.length} documento(s) obrigatório(s)` : 'Enviar a solicitação para formalização', contexto: `Processo ${p.resumo.numero} · ${p.beneficio.assunto} · a formalização não se completa sem os documentos obrigatórios`, prazo: null, diasRestantes: null, acao: faltam.length ? 'Enviar documentos' : 'Enviar solicitação', comunicacaoId: null });
+      }
+      const base = { processoId: p.resumo.id, numeroProcesso: p.resumo.numero };
+      if (p.resumo.status === 'DILIGENCIA') {
+        p.desvios.diligencias.filter((x) => x.situacao === 'ABERTA').forEach((x) => out.push({ ...base, id: 'dil' + x.id, tipo: 'Diligência', titulo: x.descricao,
+          contexto: `Processo ${p.resumo.numero} · solicitado pela análise em ${br(x.abertaEm)} · sem resposta no prazo, a solicitação pode ser indeferida`, prazo: x.prazo, diasRestantes: dif(x.prazo), acao: 'Responder', comunicacaoId: null }));
+      }
+      if (p.resumo.status === 'TERMO_ACORDO') {
+        out.push({ ...base, id: 'ter' + p.resumo.id, tipo: 'Assinatura', titulo: 'Termo de acordo aguardando assinatura digital', contexto: `Processo ${p.resumo.numero} · baixe a minuta, assine e devolva pelo sistema`,
+          prazo: p.desvios.termoPrazo, diasRestantes: dif(p.desvios.termoPrazo), acao: 'Assinar termo', comunicacaoId: null });
+      }
+      if (DECISOES.includes(p.resumo.status)) {
+        const decisao = p.resumo.status === 'INDEFERIDO' ? 'indeferimento' : p.resumo.status === 'CASSADO' ? 'cassação' : 'suspensão';
+        if (!p.desvios.decisaoCienciaEm) {
+          const marco = cs.find((c) => c.marcoProcesso && !c.cienciaEm);
+          out.push({ ...base, id: 'cid' + p.resumo.id, tipo: 'Ciência', titulo: 'Registrar ciência da decisão de ' + decisao, contexto: `Processo ${p.resumo.numero} · motivo: ${p.desvios.motivoDecisao} · o prazo recursal corre da ciência`,
+            prazo: marco?.prazo ?? null, diasRestantes: dif(marco?.prazo ?? null), acao: 'Registrar ciência', comunicacaoId: marco?.id ?? null });
+        } else if (this.podeRecorrer(p)) {
+          const fim = p.desvios.fimPrazoRecursal!;
+          out.push({ ...base, id: 'rcs' + p.resumo.id, tipo: 'Prazo recursal', titulo: 'Recurso contra a decisão de ' + decisao, contexto: `Processo ${p.resumo.numero} · Conselho de Recursos Fiscais · sem efeito suspensivo`,
+            prazo: fim, diasRestantes: dif(fim), acao: 'Apresentar recurso', comunicacaoId: null });
+        }
       }
       if (p.resumo.status === 'CIENCIA_PENDENTE') {
         const marco = cs.find((c) => c.marcoProcesso && !c.cienciaEm);
@@ -864,7 +1370,7 @@ export class DemoBackend {
       publicacao: { encaminhadoEm: null, recebidoEm: null, aprovadoEm: null, publicadoEm: null, edicao: null, pagina: null },
       cienciaEm: null, cienciaTipo: null, cienciaPor: null, vigenciaInicio: null, vigenciaFim: null, arquivadoEm: null, pecas: [], contrapartidas: [],
       documentosExigidos: this.exigidos(c.especie).map((x) => ({ documentoExigidoId: x.id, descricao: x.descricao, obrigatorio: x.obrigatorio, atual: null })),
-      documentosPendentes: [], abas: [], acoes: {},
+      documentosPendentes: [], abas: [], acoes: {}, desvios: desviosVazios(),
     };
     this.d.processos[id] = det;
     this.d.historicos[id] = [];
@@ -877,18 +1383,34 @@ export class DemoBackend {
     this.representado(r, p.resumo.interessadoId);
     this.recalcular(p, r);
     const s = p.resumo.status;
-    const ordem: Record<string, number> = { EM_FORMALIZACAO: 0, RECEBIDO: 1, INFORMACAO_FISCAL: 2, ANALISE_JURIDICA: 2, PARECER_ELABORACAO: 2, ATO_ELABORACAO: 2, HOMOLOGACAO: 3, PUBLICACAO: 4, CIENCIA_PENDENTE: 5 };
+    const ordem: Record<string, number> = { EM_FORMALIZACAO: 0, RECEBIDO: 1, INFORMACAO_FISCAL: 2, ANALISE_JURIDICA: 2, PARECER_ELABORACAO: 2, ATO_ELABORACAO: 2,
+      DILIGENCIA: 2, MANIFESTACAO: 2, INSTRUCAO_EXTERNA: 2, TERMO_ACORDO: 2, HOMOLOGACAO: 3, PUBLICACAO: 4, CIENCIA_PENDENTE: 5 };
     const o = ordem[s] ?? 6;
     const E = (rotulo: string, i: number, quando: string | null) => ({ rotulo, concluida: o > i, atual: o === i, quando });
-    const etapas = [E('Solicitação e documentos', 0, p.resumo.dataSolicitacao), E('Formalização no Atendimento', 1, p.dataFormalizacao), E('Análise pela Secretaria', 2, null), E('Homologação pelo Secretário', 3, p.homologadoEm)];
-    if (p.beneficio.geraAto) etapas.push(E('Publicação no Diário Oficial', 4, p.publicacao.publicadoEm));
-    etapas.push(E('Ciência e início dos prazos', 5, p.cienciaEm));
+    const etapas = [E('Solicitação e documentos', 0, p.resumo.dataSolicitacao), E('Formalização no Atendimento', 1, p.dataFormalizacao), E('Análise pela Secretaria', 2, null)];
+    if (!p.vigenciaInicio && p.desvios.decisaoEm) {
+      // indeferimento: não há publicação nem vigência; a última etapa é a decisão e o prazo recursal
+      const encerrado = s === 'ARQUIVADO';
+      etapas.push({ rotulo: 'Homologação do indeferimento', concluida: true, atual: false, quando: p.homologadoEm },
+        { rotulo: s === 'RECURSO' ? 'Recurso ao Conselho' : 'Decisão e prazo recursal', concluida: encerrado, atual: !encerrado, quando: p.desvios.decisaoEm });
+    } else {
+      etapas.push(E('Homologação pelo Secretário', 3, p.homologadoEm));
+      if (p.beneficio.geraAto) etapas.push(E('Publicação no Diário Oficial', 4, p.publicacao.publicadoEm));
+      etapas.push(E('Ciência e início dos prazos', 5, p.cienciaEm));
+    }
     const ato = p.pecas.find((x) => x.tipo === 'ATO_DECLARATORIO');
     const publicado = !!p.publicacao.publicadoEm;
     return { resumo: p.resumo, beneficio: p.beneficio, taxaFaixa: p.taxaFaixa, taxaValor: p.taxaValor, requerimento: p.requerimento, documentos: p.documentosExigidos,
       documentosPendentes: s === 'EM_FORMALIZACAO' ? this.pendentes(p) : [], etapas, comunicacoes: this.d.comunicacoes[pid] ?? [],
       atoNumero: publicado ? ato?.numero ?? null : null, atoTexto: publicado ? ato?.corpoFinal ?? null : null, publicadoEm: p.publicacao.publicadoEm, edicao: p.publicacao.edicao,
-      vigenciaInicio: p.vigenciaInicio, vigenciaFim: p.vigenciaFim, cienciaEm: p.cienciaEm, podeEditar: s === 'EM_FORMALIZACAO' };
+      vigenciaInicio: p.vigenciaInicio, vigenciaFim: p.vigenciaFim, cienciaEm: p.cienciaEm, podeEditar: s === 'EM_FORMALIZACAO',
+      desvios: p.desvios, podeResponderDiligencia: s === 'DILIGENCIA', podeDevolverTermo: s === 'TERMO_ACORDO', podeRecorrer: this.podeRecorrer(p),
+      cienciaDecisaoPendente: DECISOES.includes(s) && !p.desvios.decisaoCienciaEm };
+  }
+  private podeRecorrer(p: ProcessoDetalhe) {
+    if (!DECISOES.includes(p.resumo.status)) return false;
+    const fim = p.desvios.fimPrazoRecursal;
+    return !fim || fim >= hoje();
   }
   private cienciaComunicacao(cid: number, r: Requisicao) {
     const c = Object.values(this.d.comunicacoes).flat().find((x) => x.id === cid);
@@ -896,7 +1418,7 @@ export class DemoBackend {
     const p = this.p(c.processoId);
     this.representado(r, p.resumo.interessadoId);
     if (c.cienciaEm) return null;
-    if (c.marcoProcesso && p.resumo.status === 'CIENCIA_PENDENTE') this.ciencia(p.resumo.id, 'PORTAL', r);
+    if (c.marcoProcesso && (p.resumo.status === 'CIENCIA_PENDENTE' || (DECISOES.includes(p.resumo.status) && !p.desvios.decisaoCienciaEm))) this.ciencia(p.resumo.id, 'PORTAL', r);
     else Object.assign(c, { cienciaEm: agora(), cienciaTipo: 'PORTAL' });
     return null;
   }
@@ -917,6 +1439,8 @@ export class DemoBackend {
     const rot: Record<string, string> = { ATO_DECLARATORIO: 'Ato Declaratório', PARECER_FISCAL: 'Parecer Fiscal', ESCRITURACAO_FISCAL: 'Escrituração Fiscal', PROCESSUAL: 'Processual' };
     if (c.tipoConcessao) Object.assign(b, { tipoConcessao: c.tipoConcessao, tipoConcessaoRotulo: rot[c.tipoConcessao], geraAto: c.tipoConcessao === 'ATO_DECLARATORIO', geraParecer: ['ATO_DECLARATORIO', 'PARECER_FISCAL'].includes(c.tipoConcessao) });
     if (c.prazoMeses) b.prazoMeses = c.prazoMeses;
+    if (c.exigeTermo != null) b.exigeTermo = !!c.exigeTermo;
+    if (c.exigeInstrucaoExterna != null) b.exigeInstrucaoExterna = !!c.exigeInstrucaoExterna;
     if (c.modalidades != null) b.modalidades = String(c.modalidades).split(';').map((s: string) => s.trim()).filter(Boolean);
     // o processo compartilha o objeto do benefício do catálogo apenas por id: replica a mudança
     this.todos().filter((p) => p.beneficio.id === id).forEach((p) => { Object.assign(p.beneficio, b); p.resumo.tipoConcessao = b.tipoConcessao; });

@@ -17,7 +17,7 @@ export interface ItemMenu {
  * permissões em outro cliente, o menu se ajusta sem mudança de código.
  */
 const ITENS: ItemMenu[] = [
-  { rotulo: 'Minha caixa de trabalho', icone: 'inbox', rota: '/caixa', permissoes: ['PROCESSO_FORMALIZAR', 'INFORMACAO_FISCAL_EMITIR', 'PARECER_ELABORAR', 'ATO_ELABORAR', 'PARECER_HOMOLOGAR', 'ATO_PUBLICAR', 'CIENCIA_REGISTRAR', 'PROCESSO_ARQUIVAR'], contador: 'caixa' },
+  { rotulo: 'Minha caixa de trabalho', icone: 'inbox', rota: '/caixa', permissoes: ['PROCESSO_FORMALIZAR', 'INFORMACAO_FISCAL_EMITIR', 'PARECER_ELABORAR', 'ATO_ELABORAR', 'PARECER_HOMOLOGAR', 'ATO_PUBLICAR', 'CIENCIA_REGISTRAR', 'PROCESSO_ARQUIVAR', 'MANIFESTACAO_RESPONDER', 'RECURSO_ENCAMINHAR', 'PROCEDIMENTO_DECIDIR'], contador: 'caixa' },
   { rotulo: 'Painel gerencial', icone: 'dashboard', rota: '/painel', permissoes: ['DASHBOARD_VER'] },
   { rotulo: 'Consulta de processos', icone: 'file-search', rota: '/processos', permissoes: ['PROCESSO_CONSULTAR'] },
   { rotulo: 'Catálogo de benefícios', icone: 'bank', rota: '/catalogo', permissoes: ['PROCESSO_CONSULTAR', 'CATALOGO_GERIR'] },

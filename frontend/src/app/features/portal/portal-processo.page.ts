@@ -1,6 +1,9 @@
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { Component, effect, inject, input, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
+import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -16,7 +19,7 @@ import { ESPECIES } from '../processos/processos.page';
 /** Acompanhamento do processo pelo contribuinte: documentos, envio, etapas, ato publicado e ciência. */
 @Component({
   selector: 'app-portal-processo',
-  imports: [RouterLink, DatePipe, CurrencyPipe, NzButtonModule, NzIconModule, NzStepsModule, NzTagModule, NzAlertModule, NzTooltipModule],
+  imports: [FormsModule, NzCheckboxModule, NzInputModule, RouterLink, DatePipe, CurrencyPipe, NzButtonModule, NzIconModule, NzStepsModule, NzTagModule, NzAlertModule, NzTooltipModule],
   template: `
     @if (p(); as p) {
       <div class="pagina">
@@ -24,7 +27,7 @@ import { ESPECIES } from '../processos/processos.page';
           <div><a routerLink="/portal" class="voltar"><nz-icon nzType="arrow-left" /> Voltar</a>
             <h1><span class="mono">{{ p.resumo.numero }}</span> · {{ p.beneficio.assunto }}</h1>
             <div class="subtitulo">{{ p.resumo.razaoSocial }} · {{ especies[p.resumo.especie] }} · taxa {{ p.taxaValor ? (p.taxaValor | currency: 'BRL') : 'isenta' }}</div></div>
-          <nz-tag [nzColor]="p.resumo.familia === 'CONTRIBUINTE' ? 'warning' : p.resumo.familia === 'CONCLUIDO' ? 'success' : 'blue'">{{ p.resumo.statusPortal }}</nz-tag>
+          <nz-tag [nzColor]="cores[p.resumo.familia] ?? 'blue'">{{ p.resumo.statusPortal }}</nz-tag>
         </div>
 
         <div class="cartao"><div class="cartao-corpo">
@@ -37,6 +40,67 @@ import { ESPECIES } from '../processos/processos.page';
           <nz-alert nzType="info" nzShowIcon [nzMessage]="p.beneficio.geraAto ? 'Ato Declaratório publicado — registre a ciência' : 'Parecer homologado — registre a ciência'"
             nzDescription="É da ciência que correm os prazos. Sem registro, a ciência é considerada tácita após o prazo do canal eletrônico." [nzAction]="acaoCiencia" />
           <ng-template #acaoCiencia><button nz-button nzType="primary" [nzLoading]="ocupado()" (click)="ciencia()">Registrar ciência</button></ng-template>
+        }
+
+        @if (p.cienciaDecisaoPendente) {
+          <nz-alert nzType="error" nzShowIcon nzMessage="Decisão desfavorável — registre a ciência"
+            [nzDescription]="'Motivo: ' + (p.desvios.motivoDecisao ?? '—') + '. O prazo de 30 dias para recurso ao Conselho de Recursos Fiscais corre da ciência.'" [nzAction]="acaoDecisao" />
+          <ng-template #acaoDecisao><button nz-button nzType="primary" [nzLoading]="ocupado()" (click)="ciencia()">Registrar ciência</button></ng-template>
+        }
+
+        @for (dl of diligenciasAbertas(p); track dl.id) {
+          <div class="cartao destaque">
+            <div class="cartao-titulo"><span><nz-icon nzType="solution" />Diligência: {{ dl.tipo === 'DOCUMENTO' ? 'documento solicitado' : 'esclarecimento solicitado' }}</span>
+              <span class="suave">responder até {{ dl.prazo + 'T12:00:00' | date: 'dd/MM/yyyy' }}</span></div>
+            <div class="cartao-corpo coluna">
+              <div>{{ dl.descricao }}</div>
+              <textarea nz-input rows="3" [(ngModel)]="respostas[dl.id]" placeholder="Sua resposta à diligência"></textarea>
+              <div class="linha">
+                <label class="ant-btn ant-btn-default anexar"><nz-icon nzType="paper-clip" />{{ arquivos[dl.id]?.name ?? (dl.tipo === 'DOCUMENTO' ? 'Anexar arquivo' : 'Anexar arquivo (opcional)') }}
+                  <input type="file" accept="application/pdf,image/png,image/jpeg" (change)="escolherArquivo(dl.id, $event)" hidden /></label>
+                <span class="espaco"></span>
+                <button nz-button nzType="primary" [disabled]="!podeResponder(dl.id, dl.tipo)" [nzLoading]="ocupado()" (click)="responder(dl.id)"><nz-icon nzType="send" />Responder diligência</button>
+              </div>
+              <span class="suave pequeno">Sem resposta no prazo, a solicitação pode ser indeferida.</span>
+            </div>
+          </div>
+        }
+
+        @if (p.podeDevolverTermo || (p.desvios.termoTexto && p.desvios.termoAssinadoEm)) {
+          <div class="cartao" [class.destaque]="p.podeDevolverTermo">
+            <div class="cartao-titulo"><span><nz-icon nzType="form" />Termo de acordo</span>
+              <span class="suave">{{ p.desvios.termoAssinadoEm ? 'devolvido assinado em ' + (p.desvios.termoAssinadoEm | date: 'dd/MM/yyyy') : 'devolver assinado até ' + (p.desvios.termoPrazo + 'T12:00:00' | date: 'dd/MM/yyyy') }}</span></div>
+            <div class="cartao-corpo coluna">
+              <pre class="ato">{{ p.desvios.termoTexto }}</pre>
+              @if (p.podeDevolverTermo) {
+                <div class="linha">
+                  <span class="suave">Assine digitalmente a minuta e devolva o arquivo assinado (PDF).</span><span class="espaco"></span>
+                  <label class="ant-btn ant-btn-primary anexar"><nz-icon [nzType]="ocupado() ? 'loading' : 'upload'" />Enviar termo assinado
+                    <input type="file" accept="application/pdf" (change)="devolverTermo($event)" hidden /></label>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        @if (p.podeRecorrer) {
+          <div class="cartao destaque">
+            <div class="cartao-titulo"><span><nz-icon nzType="flag" />Recurso ao Conselho de Recursos Fiscais</span>
+              <span class="suave">{{ p.desvios.fimPrazoRecursal ? 'até ' + (p.desvios.fimPrazoRecursal + 'T12:00:00' | date: 'dd/MM/yyyy') : '30 dias contados da ciência' }}</span></div>
+            <div class="cartao-corpo coluna">
+              <textarea nz-input rows="4" [(ngModel)]="razoes" placeholder="Razões do recurso"></textarea>
+              <label nz-checkbox [(ngModel)]="ciente">Estou ciente de que o recurso não tem efeito suspensivo: a decisão produz efeitos enquanto o recurso é apreciado.</label>
+              <div class="linha"><span class="espaco"></span>
+                <button nz-button nzType="primary" [disabled]="!razoes.trim() || !ciente" [nzLoading]="ocupado()" (click)="recorrer()"><nz-icon nzType="send" />Apresentar recurso</button></div>
+            </div>
+          </div>
+        }
+        @for (r of p.desvios.recursos; track r.id) {
+          <div class="cartao"><div class="cartao-corpo dados">
+            <div><div class="rotulo">Recurso apresentado</div><div class="valor">{{ r.apresentadoEm | date: 'dd/MM/yyyy' }}</div></div>
+            <div><div class="rotulo">Situação</div><div class="valor">{{ r.resultado === 'PROVIDO' ? 'provido' : r.resultado === 'NAO_PROVIDO' ? 'não provido' : r.encaminhadoEm ? 'em apreciação no Conselho' : 'recebido' }}</div></div>
+            <div><div class="rotulo">Acórdão</div><div class="valor">{{ r.numeroAcordao ?? '—' }}</div></div>
+          </div></div>
         }
 
         <div class="cartao">
@@ -112,6 +176,9 @@ import { ESPECIES } from '../processos/processos.page';
     .texto { flex: 1; min-width: 220px; } .pequeno { font-size: 12px; } .espaco { flex: 1; }
     .recusa { font-size: 12px; color: #b91c1c; }
     .anexar { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .coluna { display: flex; flex-direction: column; gap: 10px; }
+    .linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .destaque { border-left: 4px solid #d97706; }
     .rodape { border-top: 1px solid var(--bf-borda); display: flex; align-items: center; gap: 10px; }
     .ato, .texto-com { white-space: pre-wrap; font-family: inherit; font-size: 13px; margin: 6px 0 0; background: #f8fafc; padding: 12px; border-radius: 4px; }
   `,
@@ -125,6 +192,11 @@ export class PortalProcessoPage {
   readonly ocupado = signal(false);
   readonly enviando = signal<number | null>(null);
   readonly especies = ESPECIES;
+  readonly cores: Record<string, string> = { CONTRIBUINTE: 'warning', CONCLUIDO: 'success', DESFAVORAVEL: 'error', ENCERRADO: 'default', EXTERNO: 'purple' };
+  respostas: Record<number, string> = {};
+  arquivos: Record<number, File | undefined> = {};
+  razoes = '';
+  ciente = false;
   readonly rotulos: Record<string, string> = { ENVIADO: 'enviado', ACEITO: 'aceito', RECUSADO: 'recusado', SUBSTITUIDO: 'substituído' };
 
   constructor() {
@@ -172,6 +244,54 @@ export class PortalProcessoPage {
           error: () => this.ocupado.set(false),
           complete: () => this.ocupado.set(false),
         });
+      },
+    });
+  }
+
+  diligenciasAbertas(p: ProcessoPortal) {
+    return p.podeResponderDiligencia ? p.desvios.diligencias.filter((d) => d.situacao === 'ABERTA') : [];
+  }
+
+  escolherArquivo(did: number, ev: Event) {
+    this.arquivos[did] = (ev.target as HTMLInputElement).files?.[0];
+    (ev.target as HTMLInputElement).value = '';
+  }
+
+  podeResponder(did: number, tipo: string) {
+    return !!(this.respostas[did] ?? '').trim() && (tipo !== 'DOCUMENTO' || !!this.arquivos[did]);
+  }
+
+  private concluir(titulo: string, detalhe: string) {
+    return {
+      next: (p: ProcessoPortal) => { this.p.set(p); this.msg.add({ severity: 'success', summary: titulo, detail: detalhe }); },
+      error: () => this.ocupado.set(false),
+      complete: () => this.ocupado.set(false),
+    };
+  }
+
+  responder(did: number) {
+    this.ocupado.set(true);
+    this.api.responderDiligenciaPortal(this.p()!.resumo.id, did, this.respostas[did].trim(), this.arquivos[did] ?? null)
+      .subscribe(this.concluir('Diligência respondida', 'A análise do processo foi retomada.'));
+  }
+
+  devolverTermo(ev: Event) {
+    const f = (ev.target as HTMLInputElement).files?.[0];
+    (ev.target as HTMLInputElement).value = '';
+    if (!f) return;
+    this.ocupado.set(true);
+    this.api.devolverTermo(this.p()!.resumo.id, f).subscribe(this.concluir('Termo de acordo devolvido', 'A Secretaria concluirá o Ato Declaratório.'));
+  }
+
+  recorrer() {
+    this.confirmacao.confirm({
+      header: 'Apresentar recurso',
+      message: 'O recurso será encaminhado ao Conselho de Recursos Fiscais. Confirma?',
+      acceptLabel: 'Apresentar',
+      accept: () => {
+        this.ocupado.set(true);
+        this.api.recorrer(this.p()!.resumo.id, this.razoes.trim(), this.ciente)
+          .subscribe(this.concluir('Recurso apresentado', 'Você será comunicado da decisão do Conselho.'));
       },
     });
   }

@@ -58,7 +58,9 @@ export interface Contadores {
 export type StatusProcesso =
   | 'EM_FORMALIZACAO' | 'RECEBIDO' | 'INFORMACAO_FISCAL' | 'ANALISE_JURIDICA' | 'PARECER_ELABORACAO'
   | 'ATO_ELABORACAO' | 'HOMOLOGACAO' | 'PUBLICACAO' | 'CIENCIA_PENDENTE' | 'ARQUIVAMENTO_PENDENTE'
-  | 'CONCEDIDO_ARQUIVADO' | 'VIGENTE';
+  | 'CONCEDIDO_ARQUIVADO' | 'VIGENTE'
+  // fase 2
+  | 'DILIGENCIA' | 'MANIFESTACAO' | 'INSTRUCAO_EXTERNA' | 'TERMO_ACORDO' | 'INDEFERIDO' | 'RECURSO' | 'SUSPENSO' | 'CASSADO' | 'ARQUIVADO';
 
 export type Especie = 'CONCESSAO' | 'PRORROGACAO' | 'ALTERACAO' | 'RENUNCIA';
 export type TipoConcessao = 'ATO_DECLARATORIO' | 'PARECER_FISCAL' | 'ESCRITURACAO_FISCAL' | 'PROCESSUAL';
@@ -76,7 +78,7 @@ export interface ProcessoResumo {
   status: StatusProcesso;
   statusRotulo: string;
   statusPortal: string;
-  familia: 'CONTRIBUINTE' | 'SEFAZ' | 'CONCLUIDO';
+  familia: 'CONTRIBUINTE' | 'SEFAZ' | 'CONCLUIDO' | 'EXTERNO' | 'DESFAVORAVEL' | 'ENCERRADO';
   setor: string | null;
   responsavelId: number | null;
   responsavelNome: string | null;
@@ -122,11 +124,13 @@ export interface Beneficio {
   prazoMeses: number | null;
   ativo: boolean;
   alcance: { rotulo: string; descricao: string }[];
+  exigeTermo: boolean;
+  exigeInstrucaoExterna: boolean;
 }
 
 export interface PecaResumo {
   id: number;
-  tipo: 'INFORMACAO_FISCAL' | 'PARECER' | 'ATO_DECLARATORIO';
+  tipo: 'INFORMACAO_FISCAL' | 'PARECER' | 'ATO_DECLARATORIO' | 'TERMO_ACORDO';
   numero: string;
   situacao: 'RASCUNHO' | 'ASSINADA';
   conclusao: string | null;
@@ -226,6 +230,90 @@ export interface ProcessoDetalhe {
   documentosPendentes: string[];
   abas: AbaProcesso[];
   acoes: Record<string, Acao>;
+  desvios: Desvios;
+}
+
+// ------------------------------------------------------------------ fase 2: desvios do fluxo
+
+export interface Diligencia {
+  id: number;
+  tipo: 'DOCUMENTO' | 'ESCLARECIMENTO';
+  descricao: string;
+  prazo: string;
+  abertaEm: string;
+  abertaPor: string;
+  resposta: string | null;
+  documentoId: number | null;
+  respondidaEm: string | null;
+  respondidaPor: string | null;
+  situacao: 'ABERTA' | 'RESPONDIDA' | 'CANCELADA';
+}
+
+export interface Manifestacao {
+  id: number;
+  setorId: number;
+  setor: string;
+  pergunta: string;
+  prazo: string;
+  solicitadaEm: string;
+  solicitadaPor: string;
+  resposta: string | null;
+  respondidaEm: string | null;
+  respondidaPor: string | null;
+  situacao: 'PENDENTE' | 'RESPONDIDA';
+}
+
+export interface Recurso {
+  id: number;
+  decisaoRecorrida: 'INDEFERIMENTO' | 'SUSPENSAO' | 'CASSACAO';
+  razoes: string;
+  apresentadoEm: string;
+  apresentadoPor: string;
+  encaminhadoEm: string | null;
+  resultado: 'PROVIDO' | 'NAO_PROVIDO' | null;
+  numeroAcordao: string | null;
+  fundamento: string | null;
+  decididoEm: string | null;
+}
+
+export interface Procedimento {
+  id: number;
+  tipo: 'SUSPENSAO' | 'CASSACAO';
+  motivo: string;
+  fundamentacao: string;
+  prazoRegularizacao: string;
+  abertoEm: string;
+  abertoPor: string;
+  situacao: 'ABERTO' | 'DECIDIDO' | 'ARQUIVADO' | 'RESTABELECIDO';
+  decididoEm: string | null;
+  decididoPor: string | null;
+  encerradoEm: string | null;
+  encerramento: string | null;
+}
+
+export interface Desvios {
+  statusRetorno: string | null;
+  motivoDecisao: string | null;
+  decisaoEm: string | null;
+  decisaoCienciaEm: string | null;
+  fimPrazoRecursal: string | null;
+  termoEnviadoEm: string | null;
+  termoPrazo: string | null;
+  termoAssinadoEm: string | null;
+  termoTexto: string | null;
+  instrucaoEnviadaEm: string | null;
+  instrucaoResultado: string | null;
+  instrucaoDetalhe: string | null;
+  diligencias: Diligencia[];
+  manifestacoes: Manifestacao[];
+  recursos: Recurso[];
+  procedimentos: Procedimento[];
+}
+
+export interface Listas {
+  motivosIndeferimento: string[];
+  motivosProcedimento: string[];
+  prazoRegularizacao: number;
 }
 
 export interface Evento {
@@ -274,6 +362,7 @@ export interface EditorPeca {
   situacao: 'RASCUNHO' | 'ASSINADA';
   textoPadraoId: number | null;
   textoPadraoNome: string | null;
+  textoPadraoTipo: string | null;
   versaoTexto: string | null;
   modelos: { id: number; nome: string; versao: string }[];
   paragrafos: { segmentos: { texto: string | null; tag: string | null }[] }[];
@@ -334,6 +423,11 @@ export interface ProcessoPortal {
   vigenciaFim: string | null;
   cienciaEm: string | null;
   podeEditar: boolean;
+  desvios: Desvios;
+  podeResponderDiligencia: boolean;
+  podeDevolverTermo: boolean;
+  podeRecorrer: boolean;
+  cienciaDecisaoPendente: boolean;
 }
 
 export interface TaxaCalculada {
