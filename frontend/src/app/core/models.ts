@@ -597,3 +597,301 @@ export interface Permissao {
   modulo: string;
   descricao: string;
 }
+
+// ------------------------------------------------------------------ fase 3: monitoramento dos beneficiários
+
+export interface CardMonitoramento {
+  rotulo: string;
+  valor: string;
+  detalhe: string;
+  alerta: boolean;
+}
+
+export type NivelRisco = 'ALTO' | 'MEDIO' | 'BAIXO';
+
+export interface LinhaCadastro {
+  interessadoId: number;
+  razaoSocial: string;
+  cnpj: string;
+  processoId: number;
+  numeroProcesso: string;
+  beneficio: string;
+  tipoConcessao: string;
+  concessao: string;
+  situacao: string;
+  situacaoTipo: string;
+  encerradoEm: string | null;
+  renuncia: number;
+  contrapartidas: 'EM_DIA' | 'ATENCAO' | 'ATRASO' | 'SEM_CONTRAPARTIDA' | 'NAO_SE_APLICA';
+  risco: NivelRisco;
+}
+
+export interface CadastroBeneficiarios {
+  cards: CardMonitoramento[];
+  linhas: LinhaCadastro[];
+}
+
+export interface ContrapartidaMonitorada {
+  id: number;
+  processoId: number;
+  natureza: string;
+  meta: number;
+  realizado: number;
+  unidade: 'MOEDA' | 'POSTOS' | 'ATIVIDADE';
+  percentual: number;
+  prazo: string;
+  periodicidade: string;
+  ultimaComprovacao: string | null;
+  proximaComprovacao: string | null;
+  proximaVencida: boolean;
+  situacao: 'DIA' | 'ATENCAO' | 'ATRASO' | 'CUMPRIDA' | 'ENCERRADA';
+  descricao: string;
+}
+
+export interface CriterioRisco {
+  nome: string;
+  nivel: NivelRisco;
+  detalhe: string;
+  motivo: string | null;
+  acao: string | null;
+}
+
+export interface ConcessaoFicha {
+  processoId: number;
+  numeroProcesso: string;
+  beneficio: string;
+  tipoConcessao: string;
+  geraAto: boolean;
+  status: string;
+  situacao: string;
+  situacaoTipo: string;
+  concessao: string;
+  vigenciaFim: string | null;
+  encerradoEm: string | null;
+  renuncia12: number;
+  renunciaAnualEstimada: number | null;
+  mesesApurados: number;
+}
+
+export interface OcorrenciaMonitoramento {
+  id: number;
+  processoId: number;
+  tipo: string;
+  descricao: string;
+  resultado: string | null;
+  registradaEm: string;
+  registradaPor: string;
+}
+
+export interface ItemPrestacao {
+  contrapartidaId: number;
+  natureza: string;
+  realizado: number;
+  unidade: string;
+}
+
+export interface PrestacaoContas {
+  id: number;
+  processoId: number;
+  numeroProcesso: string | null;
+  interessadoId: number | null;
+  razaoSocial: string | null;
+  cnpj: string | null;
+  beneficio: string | null;
+  protocolo: string;
+  periodo: string;
+  periodoFim: string;
+  prazo: string;
+  houveFruicao: boolean;
+  enviadaEm: string;
+  enviadaPor: string;
+  situacao: 'AGUARDANDO_ANALISE' | 'VALIDADA' | 'RECUSADA';
+  motivoRecusa: string | null;
+  analisadaEm: string | null;
+  analisadaPor: string | null;
+  itens: ItemPrestacao[];
+  documentos: { id: number; descricao: string; nomeArquivo: string }[];
+}
+
+export interface FichaBeneficiario {
+  interessadoId: number;
+  razaoSocial: string;
+  cnpj: string;
+  inscricaoEstadual: string;
+  municipio: string;
+  porte: string;
+  ativo: boolean;
+  situacao: string;
+  encerradoEm: string | null;
+  concessoes: ConcessaoFicha[];
+  cards: CardMonitoramento[];
+  criterios: CriterioRisco[];
+  risco: NivelRisco;
+  contrapartidas: ContrapartidaMonitorada[];
+  renunciaMensal: { periodo: string; rotulo: string; renuncia: number }[];
+  ocorrencias: OcorrenciaMonitoramento[];
+  prestacoes: PrestacaoContas[];
+  processoAcaoId: number | null;
+}
+
+export interface PainelContrapartidas {
+  cards: CardMonitoramento[];
+  linhas: { interessadoId: number; razaoSocial: string; numeroProcesso: string; contrapartida: ContrapartidaMonitorada }[];
+}
+
+export interface SemEntrega {
+  processoId: number;
+  numeroProcesso: string;
+  interessadoId: number;
+  razaoSocial: string;
+  beneficio: string;
+  concessao: string;
+  periodo: string;
+  prazo: string;
+  atrasoDias: number;
+  critico: boolean;
+  notificadaEm: string | null;
+}
+
+export interface SemObrigacao {
+  processoId: number;
+  numeroProcesso: string;
+  interessadoId: number;
+  razaoSocial: string;
+  beneficio: string;
+  detalhe: string;
+}
+
+export interface PainelPrestacao {
+  recebidas: PrestacaoContas[];
+  semEntrega: SemEntrega[];
+  semContrapartida: SemObrigacao[];
+  naoDevidas: SemObrigacao[];
+  encerrados: SemObrigacao[];
+  motivosRecusa: string[];
+}
+
+export interface ConcessaoApuracao {
+  processoId: number;
+  numeroProcesso: string;
+  interessadoId: number;
+  razaoSocial: string;
+  beneficio: string;
+  periodos: { periodo: string; rotulo: string }[];
+}
+
+export interface LinhaConfronto {
+  linha: string;
+  calculado: number;
+  declarado: number;
+  diferenca: number;
+  percentual: number;
+  situacao: 'CONFORME' | 'TOLERAVEL' | 'DIVERGENTE';
+}
+
+export interface ApuracaoBeneficio {
+  processoId: number;
+  numeroProcesso: string;
+  interessadoId: number;
+  razaoSocial: string;
+  beneficio: string;
+  periodo: string;
+  periodoRotulo: string;
+  disponivel: boolean;
+  debito: number;
+  creditoCalculado: number;
+  ajusteCalculado: number;
+  impostoSemBeneficio: number;
+  impostoComBeneficio: number;
+  renunciaPeriodo: number;
+  confronto: LinhaConfronto[];
+  divergente: boolean;
+  inconsistencias: { documento: string; tipo: string; descricao: string; valor: number; afeta: string; ocorrenciaRegistrada: boolean }[];
+  situacao: 'APROVADA' | 'EM_VERIFICACAO' | null;
+  registradaEm: string | null;
+  registradaPor: string | null;
+}
+
+export interface BarraMonitoramento {
+  rotulo: string;
+  valor: number;
+  percentual: string;
+  interessadoId: number | null;
+}
+
+export interface InteligenciaFiscal {
+  cards: CardMonitoramento[];
+  concentracao: BarraMonitoramento[];
+  topo: number;
+  porFinalidade: BarraMonitoramento[];
+  atencao: { interessadoId: number; razaoSocial: string; risco: NivelRisco; renuncia: number; motivos: string[]; acao: string }[];
+}
+
+export interface RelatorioMonitoramento {
+  trimestre: string;
+  trimestreRotulo: string;
+  trimestres: string[];
+  secoes: { titulo: string; texto: string }[];
+  emissoes: { periodo: string; emitidoEm: string; emitidoPor: string }[];
+  recorte: 'ativos' | 'concedidos';
+  ano: string;
+  anos: string[];
+  linhas: { interessadoId: number; razaoSocial: string; beneficio: string; tipoConcessao: string; concessao: string; situacao: string; situacaoTipo: string }[];
+}
+
+export interface BeneficioPublico {
+  razaoSocial: string;
+  cnpj: string;
+  beneficio: string;
+  modalidades: string;
+  fundamento: string;
+  concessao: string;
+  vigenciaFim: string | null;
+}
+
+export interface AcervoLegado {
+  id: number;
+  numero: string;
+  interessadoId: number;
+  razaoSocial: string;
+  cnpj: string;
+  assunto: string;
+  situacaoLegado: string;
+  dataAbertura: string;
+  setorLegado: string | null;
+  documentos: number;
+  observacoes: string | null;
+  migradoEm: string | null;
+  migradoPor: string | null;
+  processoId: number | null;
+}
+
+export interface Migracao {
+  beneficioId: number;
+  especie: string;
+  situacao: string;
+  vigenciaInicio?: string | null;
+  valorPretendido?: number | null;
+  justificativa: string;
+}
+
+export interface PeriodoPrestacao {
+  rotulo: string;
+  inicio: string;
+  fim: string;
+  prazo: string;
+  atrasoDias: number;
+}
+
+export interface PrestacaoPortal {
+  processoId: number;
+  numeroProcesso: string;
+  beneficio: string;
+  exige: boolean;
+  motivo: string | null;
+  contrapartidas: { id: number; natureza: string; meta: number; realizado: number; unidade: string; periodicidade: string; prazo: string }[];
+  pendente: PeriodoPrestacao | null;
+  proximo: PeriodoPrestacao | null;
+  historico: PrestacaoContas[];
+  documentosExigidos: { chave: string; descricao: string; obrigatorio: boolean }[];
+}

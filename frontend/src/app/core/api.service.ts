@@ -5,7 +5,8 @@ import {
   Beneficio, BeneficioCatalogo, BeneficioPortal, Comunicacao, Contadores, Dashboard, DocumentoExigido, EditorPeca, Especie,
   Evento, InteressadoPortal, Pagina, PainelPortal, Parametro, ParametroHistorico, PerfilDetalhe, Permissao, ProcessoDetalhe,
   ProcessoPortal, ProcessoResumo, ResultadoLote, Setor, Solicitacao, TagCatalogo, Taxa, TaxaCalculada, TextoPadrao,
-  TipoConcessao, UsuarioAdmin, UsuarioResumo, Listas,
+  TipoConcessao, UsuarioAdmin, UsuarioResumo, Listas, CadastroBeneficiarios, FichaBeneficiario, PainelContrapartidas, PainelPrestacao,
+  ConcessaoApuracao, ApuracaoBeneficio, InteligenciaFiscal, RelatorioMonitoramento, BeneficioPublico, AcervoLegado, Migracao, PrestacaoPortal,
 } from './models';
 
 type Params = Record<string, string | number | boolean | null | undefined | (string | number)[]>;
@@ -284,5 +285,76 @@ export class ApiService {
   }
   atualizarPermissoesPerfil(codigo: string, permissoes: string[]): Observable<PerfilDetalhe> {
     return this.http.put<PerfilDetalhe>(`/api/admin/perfis/${codigo}/permissoes`, permissoes);
+  }
+
+  // --------------------------------------------------------------- fase 3: monitoramento dos beneficiários
+  cadastroBeneficiarios(): Observable<CadastroBeneficiarios> {
+    return this.http.get<CadastroBeneficiarios>('/api/monitoramento/beneficiarios');
+  }
+  exportarCadastro(): Observable<Blob> {
+    return this.http.get('/api/monitoramento/beneficiarios/exportar', { responseType: 'blob' });
+  }
+  fichaBeneficiario(interessadoId: number): Observable<FichaBeneficiario> {
+    return this.http.get<FichaBeneficiario>(`/api/monitoramento/beneficiarios/${interessadoId}`);
+  }
+  painelContrapartidas(): Observable<PainelContrapartidas> {
+    return this.http.get<PainelContrapartidas>('/api/monitoramento/contrapartidas');
+  }
+  inteligencia(): Observable<InteligenciaFiscal> {
+    return this.http.get<InteligenciaFiscal>('/api/monitoramento/inteligencia');
+  }
+  painelPrestacoes(): Observable<PainelPrestacao> {
+    return this.http.get<PainelPrestacao>('/api/monitoramento/prestacoes');
+  }
+  validarPrestacao(id: number): Observable<PainelPrestacao> {
+    return this.http.post<PainelPrestacao>(`/api/monitoramento/prestacoes/${id}/validar`, {});
+  }
+  recusarPrestacao(id: number, motivo: string): Observable<PainelPrestacao> {
+    return this.http.post<PainelPrestacao>(`/api/monitoramento/prestacoes/${id}/recusar`, { motivo });
+  }
+  notificarPrestacao(processoId: number): Observable<PainelPrestacao> {
+    return this.http.post<PainelPrestacao>(`/api/monitoramento/prestacoes/notificar/${processoId}`, {});
+  }
+  concessoesApuracao(): Observable<ConcessaoApuracao[]> {
+    return this.http.get<ConcessaoApuracao[]>('/api/monitoramento/apuracao');
+  }
+  apuracao(processoId: number, periodo?: string): Observable<ApuracaoBeneficio> {
+    return this.http.get<ApuracaoBeneficio>(`/api/monitoramento/apuracao/${processoId}`, { params: params({ periodo }) });
+  }
+  aprovarApuracao(processoId: number, periodo: string): Observable<ApuracaoBeneficio> {
+    return this.http.post<ApuracaoBeneficio>(`/api/monitoramento/apuracao/${processoId}/${periodo}/aprovar`, {});
+  }
+  verificacaoApuracao(processoId: number, periodo: string): Observable<ApuracaoBeneficio> {
+    return this.http.post<ApuracaoBeneficio>(`/api/monitoramento/apuracao/${processoId}/${periodo}/verificacao`, {});
+  }
+  ocorrenciaApuracao(processoId: number, periodo: string, documento: string): Observable<ApuracaoBeneficio> {
+    return this.http.post<ApuracaoBeneficio>(`/api/monitoramento/apuracao/${processoId}/${periodo}/ocorrencias`, { documento });
+  }
+  relatorioMonitoramento(p: { trimestre?: string; recorte?: string; ano?: string } = {}): Observable<RelatorioMonitoramento> {
+    return this.http.get<RelatorioMonitoramento>('/api/monitoramento/relatorios', { params: params(p) });
+  }
+  emitirRelatorio(trimestre: string): Observable<RelatorioMonitoramento> {
+    return this.http.post<RelatorioMonitoramento>('/api/monitoramento/relatorios/emitir', { trimestre });
+  }
+  transparencia(busca?: string): Observable<BeneficioPublico[]> {
+    return this.http.get<BeneficioPublico[]>('/api/public/beneficiarios', { params: params({ busca }) });
+  }
+  acervo(): Observable<AcervoLegado[]> {
+    return this.http.get<AcervoLegado[]>('/api/acervo');
+  }
+  migrarAcervo(id: number, m: Migracao): Observable<{ processoId: number; numero: string; acervo: AcervoLegado[] }> {
+    return this.http.post<{ processoId: number; numero: string; acervo: AcervoLegado[] }>(`/api/acervo/${id}/migrar`, m);
+  }
+  prestacaoPortal(processoId: number): Observable<PrestacaoPortal> {
+    return this.http.get<PrestacaoPortal>(`/api/portal/processos/${processoId}/prestacao`);
+  }
+  enviarPrestacao(processoId: number, houveFruicao: boolean, realizados: Record<number, number>, declaracao: boolean,
+                  arquivos: Record<string, File | null | undefined>): Observable<PrestacaoPortal> {
+    const fd = new FormData();
+    fd.append('houveFruicao', String(houveFruicao));
+    fd.append('realizados', JSON.stringify(realizados));
+    fd.append('declaracao', String(declaracao));
+    for (const [k, f] of Object.entries(arquivos)) if (f) fd.append(k, f, f.name);
+    return this.http.post<PrestacaoPortal>(`/api/portal/processos/${processoId}/prestacao`, fd);
   }
 }

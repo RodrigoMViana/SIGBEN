@@ -11,7 +11,25 @@ import type {
   AbaProcesso, Acao, BeneficioCatalogo, Comunicacao, ConfiguracaoCliente, Desvios, DocumentoExigido, EditorPeca, Evento, ItemDocumental, Listas,
   Parametro, ParametroHistorico, PecaResumo, PerfilDetalhe, Permissao, ProcessoDetalhe, ProcessoResumo, Setor, Solicitacao,
   StatusProcesso, TagCatalogo, TagPeca, Taxa, TextoPadrao, UsuarioAdmin, UsuarioResumo,
+  AcervoLegado, ApuracaoBeneficio, BeneficioPublico, CadastroBeneficiarios, ConcessaoApuracao, FichaBeneficiario, InteligenciaFiscal,
+  PainelContrapartidas, PainelPrestacao, PrestacaoContas, PrestacaoPortal, RelatorioMonitoramento,
 } from '../core/models';
+
+/** Retrato das consultas da fase 3 gerado do back-end de desenvolvimento; as ações da demonstração são aplicadas sobre ele. */
+export interface DadosMonitoramento {
+  cadastro: CadastroBeneficiarios;
+  fichas: Record<number, FichaBeneficiario>;
+  contrapartidas: PainelContrapartidas;
+  prestacoes: PainelPrestacao;
+  inteligencia: InteligenciaFiscal;
+  concessoesApuracao: ConcessaoApuracao[];
+  apuracoes: Record<number, Record<string, ApuracaoBeneficio>>;
+  /** 'tri:AAAA-Tn' → relatório do trimestre; 'ano:AAAA' → linhas do recorte "concedidos no ano". */
+  relatorios: Record<string, RelatorioMonitoramento | RelatorioMonitoramento['linhas']>;
+  acervo: AcervoLegado[];
+  transparencia: BeneficioPublico[];
+  portal: Record<number, PrestacaoPortal>;
+}
 
 export interface DadosDemo {
   config: ConfiguracaoCliente;
@@ -35,6 +53,7 @@ export interface DadosDemo {
   setorDe: Record<string, string | null>;
   solicitacoes: Solicitacao[];
   listas: Listas;
+  monitoramento: DadosMonitoramento;
 }
 
 export class ErroDemo {
@@ -124,6 +143,8 @@ export class DemoBackend {
   private modelos: Record<number, Record<string, number>> = {};
   /** Situação do benefício antes do procedimento de suspensão/cassação (para restabelecer ou prover recurso). */
   private anteriorProc: Record<number, StatusProcesso> = {};
+  private seqPc = 900;
+  private emissoes: RelatorioMonitoramento['emissoes'] | null = null;
 
   constructor(private readonly d: DadosDemo) {
     for (const [pid, eds] of Object.entries(d.editores)) {
@@ -186,6 +207,26 @@ export class DemoBackend {
       ['POST', /^\/api\/processos\/(\d+)\/restabelecer$/, (m) => this.restabelecer(+m[1], r)],
       // portal
       ['GET', /^\/api\/portal\/interessados$/, () => this.interessadosPortal(r)],
+      ['GET', /^\/api\/portal\/processos\/(\d+)\/prestacao$/, (m) => this.prestacaoPortal(+m[1], r)],
+      ['POST', /^\/api\/portal\/processos\/(\d+)\/prestacao$/, (m) => this.enviarPrestacao(+m[1], r)],
+      // fase 3: monitoramento
+      ['GET', /^\/api\/monitoramento\/beneficiarios$/, () => this.mon('BENEFICIARIO_CONSULTAR', r).cadastro],
+      ['GET', /^\/api\/monitoramento\/beneficiarios\/exportar$/, () => this.exportarCadastro(r)],
+      ['GET', /^\/api\/monitoramento\/beneficiarios\/(\d+)$/, (m) => this.ficha(+m[1], r)],
+      ['GET', /^\/api\/monitoramento\/contrapartidas$/, () => this.mon('BENEFICIARIO_CONSULTAR', r).contrapartidas],
+      ['GET', /^\/api\/monitoramento\/inteligencia$/, () => this.mon('BENEFICIARIO_CONSULTAR', r).inteligencia],
+      ['GET', /^\/api\/monitoramento\/prestacoes$/, () => this.mon(['BENEFICIARIO_CONSULTAR', 'PRESTACAO_ANALISAR'], r).prestacoes],
+      ['POST', /^\/api\/monitoramento\/prestacoes\/(\d+)\/validar$/, (m) => this.validarPrestacao(+m[1], r)],
+      ['POST', /^\/api\/monitoramento\/prestacoes\/(\d+)\/recusar$/, (m) => this.recusarPrestacao(+m[1], r)],
+      ['POST', /^\/api\/monitoramento\/prestacoes\/notificar\/(\d+)$/, (m) => this.notificarPrestacao(+m[1], r)],
+      ['GET', /^\/api\/monitoramento\/apuracao$/, () => this.mon('BENEFICIARIO_CONSULTAR', r).concessoesApuracao],
+      ['GET', /^\/api\/monitoramento\/apuracao\/(\d+)$/, (m) => this.apuracao(+m[1], r.params.get('periodo'), r)],
+      ['POST', /^\/api\/monitoramento\/apuracao\/(\d+)\/(\d{4}-\d{2})\/(aprovar|verificacao|ocorrencias)$/, (m) => this.acaoApuracao(+m[1], m[2], m[3], r)],
+      ['GET', /^\/api\/monitoramento\/relatorios$/, () => this.relatorio(r.params.get('trimestre'), r.params.get('recorte'), r.params.get('ano'), r)],
+      ['POST', /^\/api\/monitoramento\/relatorios\/emitir$/, () => this.emitirRelatorio(r)],
+      ['GET', /^\/api\/acervo$/, () => this.mon('ACERVO_MIGRAR', r).acervo],
+      ['POST', /^\/api\/acervo\/(\d+)\/migrar$/, (m) => this.migrar(+m[1], r)],
+      ['GET', /^\/api\/public\/beneficiarios$/, () => this.transparencia(r.params.get('busca'))],
       ['GET', /^\/api\/portal\/interessados\/(\d+)\/painel$/, (m) => this.painelPortal(+m[1], r)],
       ['GET', /^\/api\/portal\/interessados\/(\d+)\/beneficios$/, (m) => this.beneficiosPortal(+m[1], r)],
       ['GET', /^\/api\/portal\/taxa$/, () => this.taxa(r.params.get('especie')!, Number(r.params.get('valor') || 0))],
@@ -1272,6 +1313,240 @@ export class DemoBackend {
     return p;
   }
 
+  // ===================================================================== fase 3: monitoramento (retrato + ações)
+  private mon(perm: string | string[], r: Requisicao): DadosMonitoramento {
+    this.exigirPermissao(r, ...(Array.isArray(perm) ? perm : [perm]));
+    return this.d.monitoramento;
+  }
+  private ficha(id: number, r: Requisicao) {
+    const f = this.mon('BENEFICIARIO_CONSULTAR', r).fichas[id];
+    if (!f) throw new ErroDemo(404, 'Não encontrado', 'Beneficiário (empresa sem benefício concedido) não encontrado: ' + id);
+    return f;
+  }
+  private exportarCadastro(r: Requisicao) {
+    const l = this.mon('BENEFICIARIO_CONSULTAR', r).cadastro.linhas;
+    const csv = 'Beneficiário;CNPJ;Processo;Benefício;Tipo de Concessão;Concessão;Situação;Renúncia 12 meses;Contrapartidas;Risco\n'
+      + l.map((x) => [x.razaoSocial, x.cnpj, x.numeroProcesso, x.beneficio, x.tipoConcessao, br(x.concessao), x.situacao, x.renuncia.toFixed(2).replace('.', ','), x.contrapartidas, x.risco].join(';')).join('\n');
+    return new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+  }
+  private transparencia(busca: string | null) {
+    const q = normalizar(busca ?? '');
+    return this.d.monitoramento.transparencia.filter((b) => !q || normalizar(b.razaoSocial + ' ' + b.cnpj).includes(q));
+  }
+  /** Ocorrência na ficha do beneficiário dono do processo. */
+  private ocorrencia(processoId: number, tipo: string, descricao: string, r: Requisicao) {
+    const iid = this.d.processos[processoId]?.resumo.interessadoId;
+    const f = iid ? this.d.monitoramento.fichas[iid] : null;
+    f?.ocorrencias.unshift({ id: ++this.seq, processoId, tipo, descricao, resultado: null, registradaEm: agora(), registradaPor: this.usuario(r).nome });
+    const p = this.d.processos[processoId];
+    if (p) this.evento(p, r, tipo === 'NOTIFICACAO_PRESTACAO' ? 'PRESTACAO_CONTAS' : 'APURACAO', descricao);
+  }
+  /** Mantém a mesma prestação atualizada em todas as visões do retrato (painel, ficha e portal). */
+  private sincronizar(pc: PrestacaoContas) {
+    const m = this.d.monitoramento;
+    for (const lista of [m.prestacoes.recebidas, ...Object.values(m.fichas).map((f) => f.prestacoes), ...Object.values(m.portal).map((p) => p.historico)]) {
+      const x = lista.find((y) => y.id === pc.id);
+      if (x && x !== pc) Object.assign(x, { situacao: pc.situacao, motivoRecusa: pc.motivoRecusa, analisadaEm: pc.analisadaEm, analisadaPor: pc.analisadaPor });
+    }
+  }
+  /** Atualiza a contrapartida em todas as visões e recalcula o cadastro do beneficiário. */
+  private atualizarContrapartidas(processoId: number, fn: (c: { realizado: number; meta: number; percentual?: number; situacao?: string; ultimaComprovacao?: string | null; proximaVencida?: boolean; proximaComprovacao?: string | null; id: number }) => void) {
+    const m = this.d.monitoramento;
+    const alvos = [
+      ...Object.values(m.fichas).flatMap((f) => f.contrapartidas.filter((c) => c.processoId === processoId)),
+      ...m.contrapartidas.linhas.map((l) => l.contrapartida).filter((c) => c.processoId === processoId),
+    ];
+    alvos.forEach(fn);
+    const pp = m.portal[processoId];
+    pp?.contrapartidas.forEach((c) => fn(c as never));
+    const linha = m.cadastro.linhas.find((l) => l.processoId === processoId);
+    const f = linha ? m.fichas[linha.interessadoId] : null;
+    if (linha && f) {
+      const cps = f.contrapartidas.filter((c) => c.processoId === processoId);
+      linha.contrapartidas = !cps.length ? linha.contrapartidas : cps.some((c) => c.situacao === 'ATRASO') ? 'ATRASO' : cps.some((c) => c.situacao === 'ATENCAO') ? 'ATENCAO' : 'EM_DIA';
+    }
+  }
+  private prestacaoPortal(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.representado(r, p.resumo.interessadoId);
+    const pp = this.d.monitoramento.portal[pid];
+    if (pp) return pp;
+    return { processoId: pid, numeroProcesso: p.resumo.numero, beneficio: p.beneficio.assunto, exige: false, motivo: 'O benefício ainda não está em fruição.',
+      contrapartidas: [], pendente: null, proximo: null, historico: [], documentosExigidos: [] } as PrestacaoPortal;
+  }
+  private enviarPrestacao(pid: number, r: Requisicao) {
+    const p = this.p(pid);
+    this.representado(r, p.resumo.interessadoId);
+    const m = this.d.monitoramento;
+    const pp = m.portal[pid];
+    if (!pp?.exige) throw negocio(pp?.motivo ?? 'Não há prestação de contas devida.');
+    if (!pp.pendente) throw negocio(pp.proximo ? `Não há período encerrado sem prestação de contas. O próximo período pode ser prestado até ${br(pp.proximo.prazo)}.` : 'Não há prestação de contas a enviar.');
+    const fd = r.corpo as FormData;
+    if (fd.get('declaracao') !== 'true') throw negocio('Assine a declaração de veracidade das informações.');
+    let vals: Record<string, number>;
+    try { vals = JSON.parse(String(fd.get('realizados') ?? '{}')); } catch { throw negocio('Valores realizados em formato inválido.'); }
+    for (const c of pp.contrapartidas) {
+      if (!(Number(vals[c.id]) >= 0)) throw negocio('Informe o realizado no período de cada contrapartida (zero, se não houve).');
+    }
+    for (const d of pp.documentosExigidos) if (d.obrigatorio && !fd.get(d.chave)) throw negocio('Anexe o documento obrigatório: ' + d.descricao + '.');
+    const per = pp.pendente;
+    const pc: PrestacaoContas = {
+      id: ++this.seq, processoId: pid, numeroProcesso: p.resumo.numero, interessadoId: p.resumo.interessadoId, razaoSocial: p.interessado.razaoSocial, cnpj: p.interessado.cnpj,
+      beneficio: p.beneficio.assunto, protocolo: `PC ${new Date().getFullYear()}/${String(++this.seqPc).padStart(4, '0')}`, periodo: per.rotulo, periodoFim: per.fim, prazo: per.prazo,
+      houveFruicao: fd.get('houveFruicao') === 'true', enviadaEm: agora(), enviadaPor: this.usuario(r).nome, situacao: 'AGUARDANDO_ANALISE', motivoRecusa: null, analisadaEm: null, analisadaPor: null,
+      itens: pp.contrapartidas.map((c) => ({ contrapartidaId: c.id, natureza: c.natureza, realizado: Number(vals[c.id]), unidade: c.unidade })),
+      documentos: pp.documentosExigidos.filter((d) => fd.get(d.chave)).map((d) => ({ id: ++this.seq, descricao: 'Prestação de contas — ' + d.descricao, nomeArquivo: (fd.get(d.chave) as File).name })),
+    };
+    pp.historico.unshift({ ...pc });
+    pp.pendente = null;
+    m.prestacoes.recebidas.unshift({ ...pc });
+    m.prestacoes.semEntrega = m.prestacoes.semEntrega.filter((x) => x.processoId !== pid);
+    m.fichas[p.resumo.interessadoId]?.prestacoes.unshift({ ...pc });
+    this.atualizarContrapartidas(pid, (c) => { if (c.situacao === 'ATRASO') { c.situacao = 'DIA'; c.proximaVencida = false; c.proximaComprovacao = pp.proximo?.prazo ?? null; } });
+    this.evento(p, r, 'PRESTACAO_CONTAS', `Prestação de contas ${pc.protocolo} enviada pelo contribuinte · ${per.rotulo}. Aguardando análise do monitoramento.`);
+    return pp;
+  }
+  private prestacaoAguardando(id: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PRESTACAO_ANALISAR');
+    const pc = this.d.monitoramento.prestacoes.recebidas.find((x) => x.id === id);
+    if (!pc) throw new ErroDemo(404, 'Não encontrado', 'Prestação de contas não encontrada: ' + id);
+    if (pc.situacao !== 'AGUARDANDO_ANALISE') throw negocio(`A prestação de contas ${pc.protocolo} já foi analisada.`);
+    return pc;
+  }
+  private validarPrestacao(id: number, r: Requisicao) {
+    const pc = this.prestacaoAguardando(id, r);
+    Object.assign(pc, { situacao: 'VALIDADA', analisadaEm: agora(), analisadaPor: this.usuario(r).nome });
+    this.sincronizar(pc);
+    for (const it of pc.itens) {
+      this.atualizarContrapartidas(pc.processoId, (c) => {
+        if (c.id !== it.contrapartidaId) return;
+        c.realizado += it.realizado;
+        if ('percentual' in c) c.percentual = Math.floor((c.realizado / c.meta) * 100);
+        if ('ultimaComprovacao' in c) c.ultimaComprovacao = hoje();
+        if (c.realizado >= c.meta && 'situacao' in c) c.situacao = 'CUMPRIDA';
+      });
+    }
+    const p = this.d.processos[pc.processoId];
+    if (p) this.evento(p, r, 'PRESTACAO_CONTAS', `Prestação de contas ${pc.protocolo} (${pc.periodo}) validada. Realizado das contrapartidas atualizado.`);
+    return this.d.monitoramento.prestacoes;
+  }
+  private recusarPrestacao(id: number, r: Requisicao) {
+    const motivo = r.corpo?.motivo;
+    if (!this.d.monitoramento.prestacoes.motivosRecusa.includes(motivo)) throw negocio('Escolha o motivo estruturado da recusa.');
+    const pc = this.prestacaoAguardando(id, r);
+    Object.assign(pc, { situacao: 'RECUSADA', motivoRecusa: motivo, analisadaEm: agora(), analisadaPor: this.usuario(r).nome });
+    this.sincronizar(pc);
+    const m = this.d.monitoramento;
+    const atraso = Math.max(0, Math.round((new Date(hoje() + 'T12:00:00').getTime() - new Date(pc.prazo + 'T12:00:00').getTime()) / 86_400_000));
+    const pp = m.portal[pc.processoId];
+    if (pp) pp.pendente = { rotulo: pc.periodo, inicio: pc.periodoFim, fim: pc.periodoFim, prazo: pc.prazo, atrasoDias: atraso };
+    if (atraso > 0 && !m.prestacoes.semEntrega.some((x) => x.processoId === pc.processoId)) {
+      const l = m.cadastro.linhas.find((x) => x.processoId === pc.processoId);
+      m.prestacoes.semEntrega.push({ processoId: pc.processoId, numeroProcesso: pc.numeroProcesso ?? '', interessadoId: pc.interessadoId ?? 0, razaoSocial: pc.razaoSocial ?? '',
+        beneficio: pc.beneficio ?? '', concessao: l?.concessao ?? hoje(), periodo: pc.periodo, prazo: pc.prazo, atrasoDias: atraso, critico: atraso > this.inteiro('risco.prestacao_atraso_critico_dias', 60), notificadaEm: null });
+    }
+    const p = this.d.processos[pc.processoId];
+    if (p) this.comunicarModelo(p, 'PRESTACAO_CONTAS', 'COM_PRESTACAO_RECUSADA', 'Prestação de contas recusada — ' + pc.protocolo,
+      { protocolo: pc.protocolo, periodo: pc.periodo, motivoRecusa: motivo }, this.inteiro('prestacao.prazo_notificacao_dias', 15), false);
+    return m.prestacoes;
+  }
+  private notificarPrestacao(pid: number, r: Requisicao) {
+    this.exigirPermissao(r, 'PRESTACAO_ANALISAR');
+    const s = this.d.monitoramento.prestacoes.semEntrega.find((x) => x.processoId === pid);
+    if (!s) throw negocio('Não há prestação de contas vencida sem entrega neste benefício.');
+    s.notificadaEm = agora();
+    const p = this.d.processos[pid];
+    if (p) this.comunicarModelo(p, 'PRESTACAO_CONTAS', 'COM_PRESTACAO_PENDENTE', 'Prestação de contas pendente — ' + s.periodo, { periodo: s.periodo }, this.inteiro('prestacao.prazo_notificacao_dias', 15), false);
+    this.ocorrencia(pid, 'NOTIFICACAO_PRESTACAO', `Notificação de prestação de contas pendente: ${s.periodo} · ${s.atrasoDias} dias de atraso.`, r);
+    return this.d.monitoramento.prestacoes;
+  }
+  private resultadoApuracao(pid: number, periodo: string | null) {
+    const mapa = this.d.monitoramento.apuracoes[pid];
+    if (!mapa) throw negocio('O benefício ainda não tem mês completo em fruição para apurar.');
+    const per = periodo || Object.keys(mapa).sort().reverse()[0];
+    const a = mapa[per];
+    if (!a) throw negocio('O período está fora da fruição do benefício.');
+    return a;
+  }
+  private apuracao(pid: number, periodo: string | null, r: Requisicao) {
+    this.exigirPermissao(r, 'BENEFICIARIO_CONSULTAR');
+    return this.resultadoApuracao(pid, periodo);
+  }
+  private acaoApuracao(pid: number, periodo: string, acao: string, r: Requisicao) {
+    this.exigirPermissao(r, 'APURACAO_ANALISAR');
+    const a = this.resultadoApuracao(pid, periodo);
+    if (acao === 'ocorrencias') {
+      const inc = a.inconsistencias.find((i) => i.documento === r.corpo?.documento);
+      if (!inc) throw negocio('Documento sem inconsistência no período.');
+      if (inc.ocorrenciaRegistrada) throw negocio('A ocorrência deste documento já foi registrada.');
+      inc.ocorrenciaRegistrada = true;
+      this.ocorrencia(pid, 'INCONSISTENCIA', `${inc.tipo} · ${inc.documento} · ${moeda(inc.valor)} · apuração de ${a.periodoRotulo}.`, r);
+      return a;
+    }
+    if (a.situacao) throw negocio(`A apuração de ${a.periodoRotulo} já foi ${a.situacao === 'APROVADA' ? 'aprovada.' : 'encaminhada à verificação fiscal.'}`);
+    if (acao === 'aprovar' && a.divergente) throw negocio('A apuração tem divergência relevante entre o calculado e o declarado. Encaminhe para verificação fiscal.');
+    Object.assign(a, { situacao: acao === 'aprovar' ? 'APROVADA' : 'EM_VERIFICACAO', registradaEm: agora(), registradaPor: this.usuario(r).nome });
+    if (acao === 'verificacao') this.ocorrencia(pid, 'VERIFICACAO_FISCAL', `Verificação fiscal solicitada da apuração de ${a.periodoRotulo}${a.inconsistencias.length ? ' · ' + a.inconsistencias.length + ' documento(s) com inconsistência' : ''}. Encaminhada à ${this.setorDo('FISCALIZACAO')}.`, r);
+    return a;
+  }
+  private relatorio(trimestre: string | null, recorte: string | null, ano: string | null, r: Requisicao) {
+    const m = this.mon('BENEFICIARIO_CONSULTAR', r);
+    const base0 = Object.entries(m.relatorios).find(([k]) => k.startsWith('tri:'))![1] as RelatorioMonitoramento;
+    const tri = trimestre || base0.trimestres[0];
+    const base = m.relatorios['tri:' + tri] as RelatorioMonitoramento | undefined;
+    if (!base) throw negocio('Trimestre indisponível na demonstração.');
+    this.emissoes ??= [...base0.emissoes];
+    const anoSel = ano || base.anos[0];
+    return { ...base, emissoes: this.emissoes, recorte: recorte === 'concedidos' ? 'concedidos' : 'ativos', ano: anoSel,
+      linhas: recorte === 'concedidos' ? ((m.relatorios['ano:' + anoSel] as RelatorioMonitoramento['linhas']) ?? []) : base.linhas };
+  }
+  private emitirRelatorio(r: Requisicao) {
+    this.exigirPermissao(r, 'RELATORIO_EMITIR');
+    const rel = this.relatorio(r.corpo?.trimestre, null, null, r);
+    if (this.emissoes!.some((e) => e.periodo === rel.trimestre)) throw negocio(`O relatório do ${rel.trimestreRotulo} já foi registrado como emitido.`);
+    this.emissoes!.unshift({ periodo: rel.trimestre, emitidoEm: agora(), emitidoPor: this.usuario(r).nome });
+    return this.relatorio(rel.trimestre, null, null, r);
+  }
+  private migrar(id: number, r: Requisicao) {
+    const m = this.mon('ACERVO_MIGRAR', r);
+    const a = m.acervo.find((x) => x.id === id);
+    if (!a) throw new ErroDemo(404, 'Não encontrado', 'Processo do acervo não encontrado: ' + id);
+    if (a.migradoEm) throw negocio(`O processo ${a.numero} já foi migrado para o fluxo novo.`);
+    const c = r.corpo ?? {};
+    if (!c.beneficioId || !c.especie || !c.situacao) throw negocio('Informe o benefício, a espécie e a situação de ingresso no fluxo novo.');
+    if (!String(c.justificativa ?? '').trim()) throw negocio('Informe a justificativa da migração.');
+    const b = this.d.beneficios.map((x) => x.beneficio).find((x) => x.id === c.beneficioId)!;
+    if (!['ATO_DECLARATORIO', 'PARECER_FISCAL'].includes(b.tipoConcessao)) throw negocio(`O benefício ${b.assunto} é de ${b.tipoConcessaoRotulo}: não há processo individual a migrar.`);
+    const concedido = c.situacao === 'VIGENTE' || c.situacao === 'CONCEDIDO_ARQUIVADO';
+    if (concedido) {
+      if (!c.vigenciaInicio || c.vigenciaInicio > hoje()) throw negocio('Informe o início da vigência do benefício concedido no sistema anterior.');
+      if ((c.situacao === 'VIGENTE') !== b.geraAto) throw negocio(b.geraAto ? 'Benefício de Ato Declaratório concedido migra como vigente.' : 'Benefício de Parecer Fiscal concedido migra como concedido e arquivado.');
+    }
+    const st = c.situacao as StatusProcesso;
+    const pid = ++this.seq;
+    const i = this.interessado(a.interessadoId);
+    const det: ProcessoDetalhe = {
+      resumo: { id: pid, numero: a.numero, interessadoId: i.id, razaoSocial: i.razaoSocial, cnpj: i.cnpj, beneficioId: b.id, beneficio: b.assunto, tipoConcessao: b.tipoConcessao,
+        especie: c.especie, status: st, statusRotulo: '', statusPortal: '', familia: 'SEFAZ', setor: this.setorDo(ST[st][3]), responsavelId: null, responsavelNome: null,
+        prioridade: 'NORMAL', valorPretendido: c.valorPretendido ?? null, dataSolicitacao: a.dataAbertura + 'T00:00:00', entradaSetorEm: agora(), diasNoSetor: 0, diasTotal: 0,
+        divergenciaCnae: false, parado: false },
+      interessado: i, beneficio: b, taxaFaixa: 'Recolhida no sistema anterior', taxaValor: 0, taxaPaga: true, taxaConferidaEm: null, requerimento: a.assunto,
+      solicitante: 'migração do acervo', dataFormalizacao: a.dataAbertura + 'T00:00:00', protocoloLegado: a.numero, elegibilidadeEm: null, elegibilidade: [],
+      homologadoEm: concedido && !b.geraAto ? c.vigenciaInicio + 'T00:00:00' : null, homologadoPor: null,
+      publicacao: { encaminhadoEm: null, recebidoEm: null, aprovadoEm: null, publicadoEm: concedido && b.geraAto ? c.vigenciaInicio : null, edicao: null, pagina: null },
+      cienciaEm: concedido ? c.vigenciaInicio + 'T00:00:00' : null, cienciaTipo: null, cienciaPor: concedido ? 'sistema anterior' : null,
+      vigenciaInicio: concedido ? c.vigenciaInicio : null, vigenciaFim: concedido && b.prazoMeses ? somarMeses(c.vigenciaInicio, b.prazoMeses) : null,
+      arquivadoEm: concedido && !b.geraAto ? agora() : null, pecas: [], contrapartidas: [], documentosExigidos: [], documentosPendentes: [], abas: [], acoes: {}, desvios: desviosVazios(),
+    };
+    this.d.processos[pid] = det;
+    this.d.historicos[pid] = [];
+    this.evento(det, r, 'MIGRACAO', `Processo migrado do sistema anterior por ${this.usuario(r).nome} · situação no legado: ${a.situacaoLegado} · ingresso como "${ST[st][0]}" · ${b.assunto} · ${a.documentos} documento(s) permanecem no sistema anterior · justificativa: ${String(c.justificativa).trim()}`,
+      { statusNovo: st, setorOrigem: a.setorLegado, setorDestino: det.resumo.setor });
+    this.recalcular(det, r);
+    Object.assign(a, { migradoEm: agora(), migradoPor: this.usuario(r).nome, processoId: pid });
+    return { processoId: pid, numero: a.numero, acervo: m.acervo };
+  }
+
   // ===================================================================== portal
   private representado(r: Requisicao, interessadoId: number) {
     this.exigirPermissao(r, 'PORTAL_CONTRIBUINTE');
@@ -1313,6 +1588,12 @@ export class DemoBackend {
           out.push({ ...base, id: 'rcs' + p.resumo.id, tipo: 'Prazo recursal', titulo: 'Recurso contra a decisão de ' + decisao, contexto: `Processo ${p.resumo.numero} · Conselho de Recursos Fiscais · sem efeito suspensivo`,
             prazo: fim, diasRestantes: dif(fim), acao: 'Apresentar recurso', comunicacaoId: null });
         }
+      }
+      const pp = this.d.monitoramento?.portal[p.resumo.id];
+      if (pp?.exige && pp.pendente && !DECISOES.includes(p.resumo.status)) {
+        out.push({ id: 'pc' + p.resumo.id, processoId: p.resumo.id, numeroProcesso: p.resumo.numero, tipo: 'Prestação de contas', titulo: 'Prestação de contas do ' + pp.pendente.rotulo,
+          contexto: `Processo ${p.resumo.numero} · ${p.beneficio.assunto} · devida ainda que não tenha havido fruição no período${pp.pendente.atrasoDias ? ' · em atraso há ' + pp.pendente.atrasoDias + ' dias' : ''}`,
+          prazo: pp.pendente.prazo, diasRestantes: dif(pp.pendente.prazo), acao: 'Prestar contas', comunicacaoId: null });
       }
       if (p.resumo.status === 'CIENCIA_PENDENTE') {
         const marco = cs.find((c) => c.marcoProcesso && !c.cienciaEm);

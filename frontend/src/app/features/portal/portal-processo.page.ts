@@ -150,6 +150,9 @@ import { ESPECIES } from '../processos/processos.page';
           <div class="cartao"><div class="cartao-corpo dados">
             <div><div class="rotulo">Vigência</div><div class="valor">{{ p.vigenciaInicio + 'T12:00:00' | date: 'dd/MM/yyyy' }} a {{ p.vigenciaFim ? (p.vigenciaFim + 'T12:00:00' | date: 'dd/MM/yyyy') : '—' }}</div></div>
             <div><div class="rotulo">Ciência</div><div class="valor">{{ p.cienciaEm ? (p.cienciaEm | date: 'dd/MM/yyyy HH:mm') : 'pendente' }}</div></div>
+            @if (p.beneficio.geraAto && p.resumo.status !== 'CASSADO') {
+              <div><div class="rotulo">Contrapartidas</div><div class="valor"><a [routerLink]="['/portal/prestacao', p.resumo.id]">Prestação de contas</a></div></div>
+            }
           </div></div>
         }
 

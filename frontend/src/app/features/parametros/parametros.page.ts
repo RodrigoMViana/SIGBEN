@@ -121,7 +121,7 @@ export class ParametrosPage implements OnInit {
   readonly cfg = inject(ConfigService);
   readonly abas = [
     { v: 'PRAZOS', l: 'Prazos' }, { v: 'NUMERACAO', l: 'Numeração' }, { v: 'COMUNICACAO', l: 'Comunicações' },
-    { v: 'SETORES', l: 'Setores do fluxo' },
+    { v: 'SETORES', l: 'Setores do fluxo' }, { v: 'LISTAS', l: 'Listas de motivos' }, { v: 'MONITORAMENTO', l: 'Monitoramento' },
   ];
   readonly variaveis = VARIAVEIS;
   readonly aba = signal('PRAZOS');

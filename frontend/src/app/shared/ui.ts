@@ -16,6 +16,10 @@ const CORES: Record<string, Cor> = {
   DILIGENCIA: 'warning', MANIFESTACAO: 'processing', INSTRUCAO_EXTERNA: 'blue', TERMO_ACORDO: 'warning', INDEFERIDO: 'error', RECURSO: 'purple',
   SUSPENSO: 'warning', CASSADO: 'error', ARQUIVADO: 'default',
   // desvios do fluxo
+  // monitoramento (fase 3)
+  DIA: 'success', EM_DIA: 'success', ATENCAO: 'warning', ATRASO: 'error', CUMPRIDA: 'blue', ENCERRADA: 'default', SEM_CONTRAPARTIDA: 'default', NAO_SE_APLICA: 'default',
+  ALTO: 'error', MEDIO: 'warning', BAIXO: 'success', AGUARDANDO_ANALISE: 'warning', VALIDADA: 'success', RECUSADA: 'error',
+  CONFORME: 'success', TOLERAVEL: 'warning', DIVERGENTE: 'error',
   ABERTA: 'warning', RESPONDIDA: 'success', ABERTO: 'warning', DECIDIDO: 'error', RESTABELECIDO: 'success', PROVIDO: 'success', NAO_PROVIDO: 'error',
   // documentos, peças e elegibilidade
   ENVIADO: 'blue', ACEITO: 'success', RECUSADO: 'error', SUBSTITUIDO: 'default', RASCUNHO: 'default', ASSINADA: 'success',

@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -11,7 +11,7 @@ import { MenuService } from '../../core/menu.service';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule, NzButtonModule, NzInputModule, NzIconModule, NzAlertModule],
+  imports: [FormsModule, RouterLink, NzButtonModule, NzInputModule, NzIconModule, NzAlertModule],
   template: `
     <div class="fundo">
       <div class="coluna">
@@ -39,6 +39,7 @@ import { MenuService } from '../../core/menu.service';
             <button nz-button nzBlock type="button" (click)="certificado()"><nz-icon nzType="safety-certificate" />Login com certificado digital</button>
           </div>
         </form>
+        <a routerLink="/transparencia" class="publico"><nz-icon nzType="global" /> Consulta pública de beneficiários de incentivos fiscais</a>
 
         <div class="cartao">
           <div class="cartao-titulo"><span><nz-icon nzType="key" />Acesso de demonstração</span></div>
@@ -56,6 +57,7 @@ import { MenuService } from '../../core/menu.service';
     </div>
   `,
   styles: `
+    .publico { display: inline-flex; gap: 6px; align-items: center; justify-content: center; font-size: 13px; margin-top: 4px; }
     .fundo { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bf-fundo); }
     .coluna { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 20px; }
     .cabecalho { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }

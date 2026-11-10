@@ -137,6 +137,7 @@ export class PortalPage implements OnInit {
   }
 
   agir(x: Pendencia) {
+    if (x.tipo === 'Prestação de contas') { this.router.navigate(['/portal/prestacao', x.processoId]); return; }
     if (x.tipo === 'Ciência' || x.tipo === 'Comunicação') {
       if (!x.comunicacaoId) { this.router.navigate(['/portal/processos', x.processoId]); return; }
       this.ocupado.set(x.id);

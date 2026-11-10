@@ -9,6 +9,7 @@ const ACOES = ['PROCESSO_FORMALIZAR', 'INFORMACAO_FISCAL_EMITIR', 'PARECER_ELABO
 /** Rotas com carregamento sob demanda (lazy): o bundle inicial contém apenas login e shell. */
 export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./features/login/login.page').then((m) => m.LoginPage) },
+  { path: 'transparencia', loadComponent: () => import('./features/publico/transparencia.page').then((m) => m.TransparenciaPage) },
   {
     path: '',
     canActivate: [autenticadoGuard],
@@ -27,6 +28,15 @@ export const routes: Routes = [
       { path: 'portal', ...p('PORTAL_CONTRIBUINTE'), loadComponent: () => import('./features/portal/portal.page').then((m) => m.PortalPage) },
       { path: 'portal/solicitar/:interessadoId', ...p('PORTAL_CONTRIBUINTE'), loadComponent: () => import('./features/portal/nova-solicitacao.page').then((m) => m.NovaSolicitacaoPage) },
       { path: 'portal/processos/:id', ...p('PORTAL_CONTRIBUINTE'), loadComponent: () => import('./features/portal/portal-processo.page').then((m) => m.PortalProcessoPage) },
+      { path: 'beneficiarios', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/beneficiarios.page').then((m) => m.BeneficiariosPage) },
+      { path: 'beneficiarios/:id', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/beneficiario.page').then((m) => m.BeneficiarioPage) },
+      { path: 'contrapartidas', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/contrapartidas.page').then((m) => m.ContrapartidasPage) },
+      { path: 'prestacao-contas', ...p('BENEFICIARIO_CONSULTAR', 'PRESTACAO_ANALISAR'), loadComponent: () => import('./features/monitoramento/prestacoes.page').then((m) => m.PrestacoesPage) },
+      { path: 'apuracao', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/apuracao.page').then((m) => m.ApuracaoPage) },
+      { path: 'inteligencia', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/inteligencia.page').then((m) => m.InteligenciaPage) },
+      { path: 'relatorios', ...p('BENEFICIARIO_CONSULTAR'), loadComponent: () => import('./features/monitoramento/relatorios.page').then((m) => m.RelatoriosPage) },
+      { path: 'acervo', ...p('ACERVO_MIGRAR'), loadComponent: () => import('./features/acervo/acervo.page').then((m) => m.AcervoPage) },
+      { path: 'portal/prestacao/:id', ...p('PORTAL_CONTRIBUINTE'), loadComponent: () => import('./features/portal/prestacao.page').then((m) => m.PrestacaoPage) },
       { path: 'sem-acesso', loadComponent: () => import('./features/login/sem-acesso.page').then((m) => m.SemAcessoPage) },
     ],
   },

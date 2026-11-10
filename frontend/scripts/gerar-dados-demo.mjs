@@ -92,6 +92,34 @@ d.solicitacoes = [];
 for (const s of await todasPaginas('/api/integracao/solicitacoes')) d.solicitacoes.push(await get(`/api/integracao/solicitacoes/${s.id}`));
 console.log('portal e integrações ok');
 
+// fase 3: monitoramento (retrato das consultas; o back-end simulado aplica as ações sobre ele)
+const mon = { fichas: {}, apuracoes: {}, relatorios: {}, portal: {} };
+mon.cadastro = await get('/api/monitoramento/beneficiarios');
+for (const id of [...new Set(mon.cadastro.linhas.map((l) => l.interessadoId))]) mon.fichas[id] = await get(`/api/monitoramento/beneficiarios/${id}`);
+mon.contrapartidas = await get('/api/monitoramento/contrapartidas');
+mon.prestacoes = await get('/api/monitoramento/prestacoes');
+mon.inteligencia = await get('/api/monitoramento/inteligencia');
+mon.concessoesApuracao = await get('/api/monitoramento/apuracao');
+for (const c of mon.concessoesApuracao) {
+  mon.apuracoes[c.processoId] = {};
+  for (const per of c.periodos) mon.apuracoes[c.processoId][per.periodo] = await get(`/api/monitoramento/apuracao/${c.processoId}?periodo=${per.periodo}`);
+}
+const rel0 = await get('/api/monitoramento/relatorios');
+for (const t of rel0.trimestres) mon.relatorios['tri:' + t] = await get(`/api/monitoramento/relatorios?trimestre=${t}`);
+for (const a of rel0.anos) mon.relatorios['ano:' + a] = (await get(`/api/monitoramento/relatorios?recorte=concedidos&ano=${a}`)).linhas;
+mon.acervo = await get('/api/acervo');
+mon.transparencia = await get('/api/public/beneficiarios');
+const tokensPortal = [];
+for (const login of ['roberto.lima', 'helena.barbosa', 'sigben.demo']) tokensPortal.push(await entrar(login));
+for (const l of mon.cadastro.linhas) {
+  for (const t of tokensPortal) {
+    const r = await fetch(`${BASE}/api/portal/processos/${l.processoId}/prestacao`, { headers: { Authorization: `Bearer ${t}`, 'X-Perfil': 'CONTRIBUINTE' } });
+    if (r.ok) { mon.portal[l.processoId] = await r.json(); break; }
+  }
+}
+d.monitoramento = mon;
+console.log('monitoramento ok:', Object.keys(mon.fichas).length, 'fichas,', Object.keys(mon.portal).length, 'prestações no portal');
+
 d.config.demonstracao = true;
 d.config.cliente.tema.logoUrl = d.config.cliente.tema.logoUrl?.replace(/^\//, '');
 d.geradoEm = new Date().toISOString();

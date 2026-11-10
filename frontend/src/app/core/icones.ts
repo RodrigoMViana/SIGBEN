@@ -8,7 +8,8 @@ import {
   MessageOutline, MinusCircleOutline, OrderedListOutline, PauseCircleOutline, PlayCircleOutline, PlusOutline, RedoOutline,
   ReloadOutline, SafetyCertificateOutline, SaveOutline, SearchOutline, SendOutline, SettingOutline, SlidersOutline,
   SolutionOutline, SortDescendingOutline, StopOutline, SyncOutline, TableOutline, TeamOutline, UnorderedListOutline,
-  UserOutline, UserSwitchOutline, WarningOutline,
+  UserOutline, UserSwitchOutline, WarningOutline, AlertOutline, CalculatorOutline, DownloadOutline, FileTextOutline, FundOutline,
+  HistoryOutline,
 } from '@ant-design/icons-angular/icons';
 
 /**
@@ -25,5 +26,6 @@ export const ICONES: IconDefinition[] = [
   MessageOutline, MinusCircleOutline, OrderedListOutline, PauseCircleOutline, PlayCircleOutline, PlusOutline, RedoOutline,
   ReloadOutline, SafetyCertificateOutline, SaveOutline, SearchOutline, SendOutline, SettingOutline, SlidersOutline,
   SolutionOutline, SortDescendingOutline, StopOutline, SyncOutline, TableOutline, TeamOutline, UnorderedListOutline,
-  UserOutline, UserSwitchOutline, WarningOutline,
+  UserOutline, UserSwitchOutline, WarningOutline, AlertOutline, CalculatorOutline, DownloadOutline, FileTextOutline, FundOutline,
+  HistoryOutline,
 ];
